@@ -8,7 +8,7 @@ const {
 } = require("./messageParser");
 
 async function processIncomingMessage({ userId, text, messageId, raw }) {
-  if (!(await tryAcquire(messageId))) {
+  if (!tryAcquire(messageId)) {
     logger.log({
       category: "message",
       event: "message.skipped_duplicate",
@@ -43,7 +43,21 @@ async function processIncomingMessage({ userId, text, messageId, raw }) {
       details: aiInput,
     });
 
-    const { reply } = await generateReply(aiInput);
+    let reply;
+    try {
+      ({ reply } = await generateReply(aiInput));
+    } catch (aiError) {
+      logger.log({
+        level: "error",
+        category: "ai",
+        event: "ai.error",
+        userId,
+        messageId,
+        details: { error: aiError.message },
+      });
+      reply =
+        "Recibimos tu mensaje. En este momento el asistente no está disponible, te respondemos en breve.";
+    }
 
     logger.log({
       category: "ai",
@@ -55,7 +69,7 @@ async function processIncomingMessage({ userId, text, messageId, raw }) {
 
     const result = await sendInstagramMessage(userId, reply);
 
-    await markProcessed(messageId);
+    markProcessed(messageId);
 
     logger.log({
       category: "meta",
@@ -68,7 +82,7 @@ async function processIncomingMessage({ userId, text, messageId, raw }) {
 
     return result;
   } catch (error) {
-    await release(messageId);
+    release(messageId);
 
     logger.log({
       level: "error",
@@ -88,13 +102,28 @@ async function processIncomingMessage({ userId, text, messageId, raw }) {
 }
 
 async function handleWebhookPayload(payload) {
+  const messaging = payload?.entry?.flatMap((e) => e.messaging ?? []) ?? [];
+
   logger.log({
     category: "webhook",
     event: "webhook.received",
-    details: payload,
+    details: {
+      object: payload?.object,
+      entryCount: payload?.entry?.length ?? 0,
+      messaging,
+    },
   });
 
   const { events, invalidObject } = extractMessagingEvents(payload);
+
+  if (events.length === 0) {
+    logger.log({
+      level: "warn",
+      category: "webhook",
+      event: "webhook.no_processable_events",
+      details: payload,
+    });
+  }
 
   if (invalidObject) {
     logger.log({

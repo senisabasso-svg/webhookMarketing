@@ -1,42 +1,31 @@
-const pool = require("../db/pool");
-
+const TTL_MS = 24 * 60 * 60 * 1000;
+const seen = new Map();
 const inFlight = new Set();
 
-async function tryAcquire(messageId) {
+function pruneExpired() {
+  const now = Date.now();
+  for (const [mid, expiresAt] of seen.entries()) {
+    if (expiresAt <= now) seen.delete(mid);
+  }
+}
+
+function tryAcquire(messageId) {
   if (!messageId) return false;
-  if (inFlight.has(messageId)) return false;
-
-  const result = await pool.query(
-    `INSERT INTO processed_messages (message_id, status)
-     VALUES ($1, 'processing')
-     ON CONFLICT (message_id) DO NOTHING
-     RETURNING message_id`,
-    [messageId]
-  );
-
-  if (result.rowCount === 0) return false;
-
+  pruneExpired();
+  if (seen.has(messageId) || inFlight.has(messageId)) return false;
   inFlight.add(messageId);
   return true;
 }
 
-async function markProcessed(messageId) {
+function markProcessed(messageId) {
   if (!messageId) return;
   inFlight.delete(messageId);
-  await pool.query(
-    `UPDATE processed_messages SET status = 'completed' WHERE message_id = $1`,
-    [messageId]
-  );
+  seen.set(messageId, Date.now() + TTL_MS);
 }
 
-async function release(messageId) {
+function release(messageId) {
   if (!messageId) return;
   inFlight.delete(messageId);
-  await pool.query(
-    `DELETE FROM processed_messages
-     WHERE message_id = $1 AND status = 'processing'`,
-    [messageId]
-  );
 }
 
 module.exports = { tryAcquire, markProcessed, release };

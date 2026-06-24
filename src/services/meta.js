@@ -1,8 +1,15 @@
 const config = require("../config");
 
 async function sendInstagramMessage(recipientId, text) {
+  if (!config.isMetaTokenConfigured()) {
+    throw new Error(
+      "META_ACCESS_TOKEN no configurado. Conectá tu cuenta de Instagram en Meta y pegá el token en .env"
+    );
+  }
+
+  const endpointId = config.messagesEndpointId();
   const url = new URL(
-    `https://graph.facebook.com/${config.metaGraphVersion}/me/messages`
+    `${config.graphBaseUrl()}/${config.metaGraphVersion}/${endpointId}/messages`
   );
   url.searchParams.set("access_token", config.metaAccessToken);
 

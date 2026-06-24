@@ -63,39 +63,69 @@ function buildMessageText(message) {
   return segments.join("\n").trim();
 }
 
+function normalizeMessagingItem(item) {
+  if (item.message) {
+    return {
+      userId: item.sender?.id,
+      recipientId: item.recipient?.id,
+      messageId: item.message.mid,
+      timestamp: item.timestamp,
+      message: item.message,
+      source: "message",
+    };
+  }
+
+  if (item.message_edit) {
+    return {
+      userId: item.sender?.id,
+      recipientId: item.recipient?.id,
+      messageId: item.message_edit.mid,
+      timestamp: item.timestamp,
+      message: {
+        mid: item.message_edit.mid,
+        text: item.message_edit.text,
+        num_edit: item.message_edit.num_edit,
+      },
+      source: "message_edit",
+    };
+  }
+
+  return null;
+}
+
 function parseMessagingItem(item) {
-  const message = item.message;
-  if (!message) return null;
+  const normalized = normalizeMessagingItem(item);
+
+  if (!normalized) {
+    logger.log({
+      level: "warn",
+      category: "webhook",
+      event: "message.unhandled_event",
+      details: { keys: Object.keys(item) },
+    });
+    return null;
+  }
+
+  const { userId, recipientId, messageId, message, source } = normalized;
 
   const base = {
-    userId: item.sender?.id,
-    recipientId: item.recipient?.id,
-    messageId: message.mid,
+    userId,
+    recipientId,
+    messageId,
     timestamp: item.timestamp,
+    source,
   };
 
   if (message.is_echo) {
-    return {
-      ...base,
-      action: "skip",
-      reason: "echo",
-    };
+    return { ...base, action: "skip", reason: "echo" };
   }
 
   if (message.is_deleted) {
-    return {
-      ...base,
-      action: "skip",
-      reason: "deleted",
-    };
+    return { ...base, action: "skip", reason: "deleted" };
   }
 
   if (message.is_unsupported) {
-    return {
-      ...base,
-      action: "skip",
-      reason: "unsupported",
-    };
+    return { ...base, action: "skip", reason: "unsupported" };
   }
 
   const text = buildMessageText(message);
@@ -104,11 +134,23 @@ function parseMessagingItem(item) {
     return {
       ...base,
       action: "skip",
-      reason: "no_content",
+      reason: source === "message_edit" ? "edit_without_text" : "no_content",
       details: {
+        source,
         hasAttachments: Boolean(message.attachments?.length),
         hasQuickReply: Boolean(message.quick_reply),
+        hasSender: Boolean(userId),
+        num_edit: message.num_edit ?? null,
       },
+    };
+  }
+
+  if (!userId || !messageId) {
+    return {
+      ...base,
+      action: "skip",
+      reason: "missing_ids",
+      details: { source, hasSender: Boolean(userId), hasMessageId: Boolean(messageId) },
     };
   }
 
@@ -117,11 +159,13 @@ function parseMessagingItem(item) {
     action: "process",
     text,
     raw: {
+      source,
       text: message.text ?? null,
       attachments: message.attachments ?? null,
       quick_reply: message.quick_reply ?? null,
       reply_to: message.reply_to ?? null,
       referral: message.referral ?? null,
+      num_edit: message.num_edit ?? null,
     },
   };
 }
@@ -155,6 +199,8 @@ function logSkippedEvent(event) {
     deleted: "message.skipped_deleted",
     unsupported: "message.skipped_unsupported",
     no_content: "message.skipped_no_content",
+    edit_without_text: "message.skipped_edit_without_text",
+    missing_ids: "message.skipped_missing_ids",
   };
 
   logger.log({
@@ -162,7 +208,7 @@ function logSkippedEvent(event) {
     event: eventMap[event.reason] || "message.skipped",
     userId: event.userId,
     messageId: event.messageId,
-    details: { reason: event.reason, ...event.details },
+    details: { reason: event.reason, source: event.source, ...event.details },
   });
 }
 
