@@ -2,6 +2,7 @@ const { generateReply } = require("./gemini");
 const { sendWhatsAppMessage } = require("./whatsapp");
 const { tryAcquire, markProcessed, release } = require("./messageDedup");
 const { getHistory, appendTurn } = require("./conversationHistory");
+const { UNAVAILABLE_REPLY } = require("../constants/fallbackMessages");
 const logger = require("./logger");
 const { extractWhatsAppEvents } = require("./whatsappParser");
 
@@ -78,9 +79,11 @@ async function processIncomingWhatsAppMessage(
     });
 
     let reply;
+    let aiFailed = false;
     try {
       ({ reply } = await generateReply(aiInput, tenant, history));
     } catch (aiError) {
+      aiFailed = true;
       logger.log({
         platform: PLATFORM,
         level: "error",
@@ -90,8 +93,7 @@ async function processIncomingWhatsAppMessage(
         messageId,
         details: { companyId: tenant.companyId, error: aiError.message },
       });
-      reply =
-        "Recibimos tu mensaje. En este momento el asistente no está disponible, te respondemos en breve.";
+      reply = UNAVAILABLE_REPLY;
     }
 
     logger.log({
@@ -107,7 +109,9 @@ async function processIncomingWhatsAppMessage(
     const result = await sendWhatsAppMessage(from, reply, tenant);
 
     try {
-      await appendTurn(tenant.companyId, "whatsapp", from, text, reply, messageId);
+      if (!aiFailed) {
+        await appendTurn(tenant.companyId, "whatsapp", from, text, reply, messageId);
+      }
     } catch (historyError) {
       logger.log({
         platform: PLATFORM,

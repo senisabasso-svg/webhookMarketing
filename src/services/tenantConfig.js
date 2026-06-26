@@ -7,10 +7,14 @@ function isConfigured(value) {
 }
 
 function parseModels(modelsStr, fallbackModel) {
-  return (modelsStr || fallbackModel || "gemini-2.5-flash-lite")
-    .split(",")
-    .map((m) => m.trim())
-    .filter(Boolean);
+  const primary = fallbackModel || globalConfig.geminiModel;
+  if (modelsStr) {
+    return modelsStr
+      .split(",")
+      .map((m) => m.trim())
+      .filter(Boolean);
+  }
+  return [...new Set([primary, ...globalConfig.geminiModels])];
 }
 
 function buildTenantConfig({ companyId, companyName, source, type, config = {} }) {

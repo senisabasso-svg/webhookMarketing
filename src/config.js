@@ -15,6 +15,23 @@ function isConfigured(value) {
 
 const defaultSystemPrompt = require("./prompts/benjamin");
 
+const DEFAULT_GEMINI_MODELS = [
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-flash-latest",
+];
+
+function parseGeminiModels() {
+  if (process.env.GEMINI_MODELS) {
+    return process.env.GEMINI_MODELS.split(",")
+      .map((m) => m.trim())
+      .filter(Boolean);
+  }
+
+  const primary = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODELS[0];
+  return [...new Set([primary, ...DEFAULT_GEMINI_MODELS])];
+}
+
 module.exports = {
   port: Number(process.env.PORT) || 3000,
   nodeEnv: process.env.NODE_ENV || "development",
@@ -24,15 +41,8 @@ module.exports = {
   superadminEmail: process.env.SUPERADMIN_EMAIL || "",
   superadminPassword: process.env.SUPERADMIN_PASSWORD || "",
   geminiApiKey: required("GEMINI_API_KEY"),
-  geminiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash-lite",
-  geminiModels: (
-    process.env.GEMINI_MODELS ||
-    process.env.GEMINI_MODEL ||
-    "gemini-2.5-flash-lite,gemini-2.5-flash,gemini-flash-latest"
-  )
-    .split(",")
-    .map((m) => m.trim())
-    .filter(Boolean),
+  geminiModel: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODELS[0],
+  geminiModels: parseGeminiModels(),
   geminiSystemPrompt: process.env.GEMINI_SYSTEM_PROMPT || defaultSystemPrompt,
 
   verifyToken: process.env.VERIFY_TOKEN || "",

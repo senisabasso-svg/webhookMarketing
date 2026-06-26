@@ -2,6 +2,7 @@ const { generateReply } = require("./gemini");
 const { sendInstagramMessage } = require("./meta");
 const { tryAcquire, markProcessed, release } = require("./messageDedup");
 const { getHistory, appendTurn } = require("./conversationHistory");
+const { UNAVAILABLE_REPLY } = require("../constants/fallbackMessages");
 const logger = require("./logger");
 const {
   extractMessagingEvents,
@@ -73,9 +74,11 @@ async function processIncomingMessage(
     });
 
     let reply;
+    let aiFailed = false;
     try {
       ({ reply } = await generateReply(aiInput, tenant, history));
     } catch (aiError) {
+      aiFailed = true;
       logger.log({
         platform: "instagram",
         level: "error",
@@ -85,8 +88,7 @@ async function processIncomingMessage(
         messageId,
         details: { companyId: tenant.companyId, error: aiError.message },
       });
-      reply =
-        "Recibimos tu mensaje. En este momento el asistente no está disponible, te respondemos en breve.";
+      reply = UNAVAILABLE_REPLY;
     }
 
     logger.log({
@@ -102,7 +104,9 @@ async function processIncomingMessage(
     const result = await sendInstagramMessage(userId, reply, tenant);
 
     try {
-      await appendTurn(tenant.companyId, "instagram", userId, text, reply, messageId);
+      if (!aiFailed) {
+        await appendTurn(tenant.companyId, "instagram", userId, text, reply, messageId);
+      }
     } catch (historyError) {
       logger.log({
         platform: "instagram",
