@@ -41,6 +41,14 @@ module.exports = {
   superadminEmail: process.env.SUPERADMIN_EMAIL || "",
   superadminPassword: process.env.SUPERADMIN_PASSWORD || "",
   febrosClientTrackingUrl: process.env.FEBROS_CLIENT_TRACKING_URL || "",
+  publicBaseUrl: (() => {
+    if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/$/, "");
+    if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+      return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
+    }
+    const port = Number(process.env.PORT) || 3000;
+    return `http://localhost:${port}`;
+  })(),
   geminiApiKey: required("GEMINI_API_KEY"),
   geminiModel: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODELS[0],
   geminiModels: parseGeminiModels(),

@@ -288,3 +288,29 @@ textarea {
   gap: 0.75rem;
   margin-top: 1rem;
 }
+
+.card--leader {
+  border-color: #3b82f6;
+}
+
+.card-hint {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.pdf-current {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+}
+
+input[type="file"] {
+  margin-bottom: 1rem;
+}

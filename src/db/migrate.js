@@ -50,6 +50,20 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
 
 CREATE INDEX IF NOT EXISTS idx_conversation_lookup
   ON conversation_messages(company_id, platform, user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS leader_comment_config (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  keyword VARCHAR(255) NOT NULL DEFAULT '',
+  reply_text TEXT NOT NULL DEFAULT '',
+  pdf_filename VARCHAR(512),
+  pdf_original_name VARCHAR(255),
+  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO leader_comment_config (id)
+VALUES (1)
+ON CONFLICT (id) DO NOTHING;
 `;
 
 async function seedSuperAdmin(client) {

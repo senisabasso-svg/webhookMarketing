@@ -3,6 +3,9 @@ const { requireAuth } = require("../../services/auth");
 const config = require("../../config");
 const integrationStore = require("../../services/integrationStore");
 const { INTEGRATION_TYPES } = require("../../constants/integrationFields");
+const leaderCommentConfig = require("../../services/leaderCommentConfig");
+const { uploadLeaderPdf } = require("../../middleware/uploadLeaderPdf");
+const { isDatabaseEnabled } = require("../../db/pool");
 
 const router = express.Router();
 
@@ -71,6 +74,88 @@ router.get("/febros-tracking", (_req, res) => {
     url: config.febrosClientTrackingUrl || null,
     label: "Acceso seguimiento clientes febros",
   });
+});
+
+router.get("/leader-comment", async (_req, res) => {
+  if (!isDatabaseEnabled()) {
+    return res.status(503).json({ error: "Base de datos no configurada" });
+  }
+
+  try {
+    const leader = await leaderCommentConfig.getConfig();
+    res.json({
+      leader,
+      publicBaseUrl: config.publicBaseUrl,
+      metaNote:
+        "Suscribí el campo comments en Meta Developer para @febros.uy",
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.put("/leader-comment", async (req, res) => {
+  if (!isDatabaseEnabled()) {
+    return res.status(503).json({ error: "Base de datos no configurada" });
+  }
+
+  const { keyword, replyText, enabled } = req.body || {};
+
+  if (!String(keyword || "").trim()) {
+    return res.status(400).json({ error: "La palabra clave es requerida" });
+  }
+  if (!String(replyText || "").trim()) {
+    return res.status(400).json({ error: "El texto de respuesta es requerido" });
+  }
+
+  try {
+    const leader = await leaderCommentConfig.updateConfig({
+      keyword,
+      replyText,
+      enabled: Boolean(enabled),
+    });
+    res.json({ leader, publicBaseUrl: config.publicBaseUrl });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/leader-comment/pdf", (req, res) => {
+  if (!isDatabaseEnabled()) {
+    return res.status(503).json({ error: "Base de datos no configurada" });
+  }
+
+  uploadLeaderPdf.single("pdf")(req, res, async (uploadError) => {
+    if (uploadError) {
+      return res.status(400).json({ error: uploadError.message });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: "Archivo PDF requerido" });
+    }
+
+    try {
+      const leader = await leaderCommentConfig.setPdf(
+        req.file.filename,
+        req.file.originalname
+      );
+      res.json({ leader, publicBaseUrl: config.publicBaseUrl });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+});
+
+router.delete("/leader-comment/pdf", async (_req, res) => {
+  if (!isDatabaseEnabled()) {
+    return res.status(503).json({ error: "Base de datos no configurada" });
+  }
+
+  try {
+    const leader = await leaderCommentConfig.removePdf();
+    res.json({ leader });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 module.exports = router;

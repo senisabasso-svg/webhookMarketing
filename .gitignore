@@ -1,6 +1,10 @@
 node_modules/
 client/node_modules/
 client/dist/
+uploads/*
+!uploads/leader/
+uploads/leader/*
+!uploads/leader/.gitkeep
 .env
 *.log
 .DS_Store

@@ -8,6 +8,8 @@ const { migrate } = require("./db/migrate");
 const { isDatabaseEnabled } = require("./db/pool");
 const integrationStore = require("./services/integrationStore");
 
+const leaderCommentConfig = require("./services/leaderCommentConfig");
+
 const authApi = require("./routes/api/auth");
 const adminApi = require("./routes/api/admin");
 const companyApi = require("./routes/api/company");
@@ -27,6 +29,17 @@ app.use(express.json());
 app.use("/api/auth", authApi);
 app.use("/api/admin", adminApi);
 app.use("/api/company", companyApi);
+
+leaderCommentConfig.ensureUploadDir();
+app.use(
+  "/files/leader",
+  express.static(leaderCommentConfig.getUploadDir(), {
+    setHeaders(res) {
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Cache-Control", "public, max-age=300");
+    },
+  })
+);
 
 app.get("/health", (_req, res) => {
   res.json({
@@ -50,6 +63,7 @@ app.get("*", (req, res, next) => {
   if (
     req.path.startsWith("/webhook") ||
     req.path.startsWith("/api") ||
+    req.path.startsWith("/files") ||
     req.path === "/health"
   ) {
     return next();

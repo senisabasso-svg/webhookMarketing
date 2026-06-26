@@ -35,6 +35,26 @@ export const api = {
     }),
   getIntegrationFields: () => request("/admin/integration-fields"),
   getFebrosTracking: () => request("/admin/febros-tracking"),
+  getLeaderComment: () => request("/admin/leader-comment"),
+  updateLeaderComment: (payload) =>
+    request("/admin/leader-comment", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  uploadLeaderPdf: async (file) => {
+    const form = new FormData();
+    form.append("pdf", file);
+    const res = await fetch("/api/admin/leader-comment/pdf", {
+      method: "POST",
+      credentials: "include",
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+    return data;
+  },
+  deleteLeaderPdf: () =>
+    request("/admin/leader-comment/pdf", { method: "DELETE" }),
   getCompany: () => request("/company/company"),
   getIntegration: (type) => request(`/company/integrations/${type}`),
   updateIntegration: (type, config) =>

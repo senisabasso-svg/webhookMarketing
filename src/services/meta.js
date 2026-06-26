@@ -1,26 +1,16 @@
 const globalConfig = require("../config");
 
-async function sendInstagramMessage(recipientId, text, tenant = null) {
+async function metaPost(url, body, tenant = null) {
   const cfg = tenant || globalConfig;
 
   if (!cfg.isMetaTokenConfigured()) {
-    throw new Error(
-      "META_ACCESS_TOKEN no configurado para esta empresa"
-    );
+    throw new Error("META_ACCESS_TOKEN no configurado para esta empresa");
   }
 
-  const endpointId = cfg.messagesEndpointId();
-  const url = new URL(
-    `${cfg.graphBaseUrl()}/${cfg.metaGraphVersion}/${endpointId}/messages`
-  );
-  url.searchParams.set("access_token", cfg.metaAccessToken);
+  const requestUrl = new URL(url);
+  requestUrl.searchParams.set("access_token", cfg.metaAccessToken);
 
-  const body = {
-    recipient: { id: recipientId },
-    message: { text },
-  };
-
-  const response = await fetch(url, {
+  const response = await fetch(requestUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -39,4 +29,53 @@ async function sendInstagramMessage(recipientId, text, tenant = null) {
   return data;
 }
 
-module.exports = { sendInstagramMessage };
+async function sendInstagramMessage(recipientId, text, tenant = null) {
+  const cfg = tenant || globalConfig;
+  const endpointId = cfg.messagesEndpointId();
+  const url = `${cfg.graphBaseUrl()}/${cfg.metaGraphVersion}/${endpointId}/messages`;
+
+  return metaPost(
+    url,
+    {
+      recipient: { id: recipientId },
+      message: { text },
+    },
+    tenant
+  );
+}
+
+async function sendInstagramPrivateReply(commentId, text, tenant = null) {
+  const cfg = tenant || globalConfig;
+  const url = `${cfg.graphBaseUrl()}/${cfg.metaGraphVersion}/${commentId}/private_replies`;
+
+  return metaPost(url, { message: text }, tenant);
+}
+
+async function sendInstagramFileAttachment(recipientId, fileUrl, tenant = null) {
+  const cfg = tenant || globalConfig;
+  const endpointId = cfg.messagesEndpointId();
+  const url = `${cfg.graphBaseUrl()}/${cfg.metaGraphVersion}/${endpointId}/messages`;
+
+  return metaPost(
+    url,
+    {
+      recipient: { id: recipientId },
+      message: {
+        attachment: {
+          type: "file",
+          payload: {
+            url: fileUrl,
+            is_reusable: true,
+          },
+        },
+      },
+    },
+    tenant
+  );
+}
+
+module.exports = {
+  sendInstagramMessage,
+  sendInstagramPrivateReply,
+  sendInstagramFileAttachment,
+};

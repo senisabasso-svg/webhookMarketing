@@ -13,6 +13,17 @@ export default function SuperAdmin({ user, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [febrosTracking, setFebrosTracking] = useState(null);
+  const [leaderLoading, setLeaderLoading] = useState(true);
+  const [leaderSaving, setLeaderSaving] = useState(false);
+  const [leaderPdfUploading, setLeaderPdfUploading] = useState(false);
+  const [leaderMeta, setLeaderMeta] = useState({ publicBaseUrl: "", metaNote: "" });
+  const [leaderForm, setLeaderForm] = useState({
+    keyword: "",
+    replyText: "",
+    enabled: false,
+    pdfOriginalName: "",
+    pdfUrl: "",
+  });
 
   const [form, setForm] = useState({
     name: "",
@@ -20,6 +31,30 @@ export default function SuperAdmin({ user, onLogout }) {
     adminEmail: "",
     adminPassword: "",
   });
+
+  async function loadLeaderConfig() {
+    setLeaderLoading(true);
+    try {
+      const data = await api.getLeaderComment();
+      setLeaderMeta({
+        publicBaseUrl: data.publicBaseUrl || "",
+        metaNote: data.metaNote || "",
+      });
+      if (data.leader) {
+        setLeaderForm({
+          keyword: data.leader.keyword || "",
+          replyText: data.leader.replyText || "",
+          enabled: Boolean(data.leader.enabled),
+          pdfOriginalName: data.leader.pdfOriginalName || "",
+          pdfUrl: data.leader.pdfUrl || "",
+        });
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLeaderLoading(false);
+    }
+  }
 
   async function loadCompanies() {
     setLoading(true);
@@ -35,6 +70,7 @@ export default function SuperAdmin({ user, onLogout }) {
 
   useEffect(() => {
     loadCompanies();
+    loadLeaderConfig();
     api.getFebrosTracking().then(setFebrosTracking).catch(() => {});
   }, []);
 
@@ -50,6 +86,82 @@ export default function SuperAdmin({ user, onLogout }) {
         [type]: !prev.integrations[type],
       },
     }));
+  }
+
+  async function handleLeaderSave(e) {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    setLeaderSaving(true);
+
+    try {
+      const data = await api.updateLeaderComment({
+        keyword: leaderForm.keyword,
+        replyText: leaderForm.replyText,
+        enabled: leaderForm.enabled,
+      });
+      if (data.leader) {
+        setLeaderForm((prev) => ({
+          ...prev,
+          keyword: data.leader.keyword,
+          replyText: data.leader.replyText,
+          enabled: data.leader.enabled,
+          pdfOriginalName: data.leader.pdfOriginalName || prev.pdfOriginalName,
+          pdfUrl: data.leader.pdfUrl || prev.pdfUrl,
+        }));
+      }
+      setSuccess("Configuración de comentarios Febros guardada");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLeaderSaving(false);
+    }
+  }
+
+  async function handleLeaderPdfChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setError("");
+    setSuccess("");
+    setLeaderPdfUploading(true);
+
+    try {
+      const data = await api.uploadLeaderPdf(file);
+      if (data.leader) {
+        setLeaderForm((prev) => ({
+          ...prev,
+          pdfOriginalName: data.leader.pdfOriginalName || "",
+          pdfUrl: data.leader.pdfUrl || "",
+        }));
+      }
+      setSuccess("PDF cargado correctamente");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLeaderPdfUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handleLeaderPdfRemove() {
+    setError("");
+    setSuccess("");
+    setLeaderPdfUploading(true);
+
+    try {
+      await api.deleteLeaderPdf();
+      setLeaderForm((prev) => ({
+        ...prev,
+        pdfOriginalName: "",
+        pdfUrl: "",
+      }));
+      setSuccess("PDF eliminado");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLeaderPdfUploading(false);
+    }
   }
 
   async function handleCreate(e) {
@@ -122,6 +234,99 @@ export default function SuperAdmin({ user, onLogout }) {
 
       {error && <div className="error">{error}</div>}
       {success && <div className="success">{success}</div>}
+
+      <div className="card card--leader">
+        <h2>EMPRESA LÍDER — FEBROS</h2>
+        <p className="muted card-hint">
+          Empresa configurada por variables de entorno (@febros.uy). Si alguien
+          comenta en cualquier post con la palabra clave, recibe un DM con tu
+          texto y el PDF cargado.
+        </p>
+        {leaderMeta.metaNote && (
+          <p className="muted card-hint">{leaderMeta.metaNote}</p>
+        )}
+
+        {leaderLoading ? (
+          <p className="muted">Cargando configuración...</p>
+        ) : (
+          <form onSubmit={handleLeaderSave}>
+            <div className="checkbox-row">
+              <input
+                type="checkbox"
+                id="leader-enabled"
+                checked={leaderForm.enabled}
+                onChange={(e) =>
+                  setLeaderForm((prev) => ({
+                    ...prev,
+                    enabled: e.target.checked,
+                  }))
+                }
+              />
+              <label htmlFor="leader-enabled" style={{ margin: 0 }}>
+                Automatización activa
+              </label>
+            </div>
+
+            <label>Palabra clave en el comentario</label>
+            <input
+              value={leaderForm.keyword}
+              onChange={(e) =>
+                setLeaderForm((prev) => ({ ...prev, keyword: e.target.value }))
+              }
+              placeholder='Ej: INFO, CATALOGO, PDF'
+              required
+            />
+
+            <label>Texto del mensaje privado (DM)</label>
+            <textarea
+              value={leaderForm.replyText}
+              onChange={(e) =>
+                setLeaderForm((prev) => ({ ...prev, replyText: e.target.value }))
+              }
+              placeholder="¡Hola! Gracias por comentar. Te comparto la info..."
+              required
+            />
+
+            <label>PDF para enviar por DM</label>
+            {leaderForm.pdfOriginalName ? (
+              <div className="pdf-current">
+                <span>{leaderForm.pdfOriginalName}</span>
+                {leaderForm.pdfUrl && (
+                  <a href={leaderForm.pdfUrl} target="_blank" rel="noreferrer">
+                    Ver PDF
+                  </a>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleLeaderPdfRemove}
+                  disabled={leaderPdfUploading}
+                >
+                  Quitar PDF
+                </button>
+              </div>
+            ) : (
+              <p className="muted">Todavía no hay PDF cargado.</p>
+            )}
+            <input
+              type="file"
+              accept="application/pdf"
+              onChange={handleLeaderPdfChange}
+              disabled={leaderPdfUploading}
+            />
+
+            {leaderMeta.publicBaseUrl && (
+              <p className="muted card-hint">
+                URL pública base: {leaderMeta.publicBaseUrl}
+              </p>
+            )}
+
+            <button className="btn" type="submit" disabled={leaderSaving}>
+              {leaderSaving ? "Guardando..." : "Guardar configuración Febros"}
+            </button>
+          </form>
+        )}
+      </div>
 
       <div className="card">
         <h2>Crear empresa</h2>

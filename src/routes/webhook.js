@@ -1,6 +1,6 @@
 const express = require("express");
 const config = require("../config");
-const { handleWebhookPayload } = require("../services/messageProcessor");
+const { handleInstagramWebhook } = require("../services/instagramDispatcher");
 const { handleWhatsAppEvent } = require("../services/whatsappProcessor");
 const {
   resolveInstagramTenant,
@@ -67,7 +67,7 @@ router.post("/", validateMetaSignature, (req, res) => {
           });
           return;
         }
-        return handleWebhookPayload(req.body, tenant);
+        return handleInstagramWebhook(req.body, tenant);
       })
       .catch((error) => {
         logger.log({
