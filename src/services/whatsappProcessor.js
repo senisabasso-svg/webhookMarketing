@@ -1,6 +1,7 @@
 const { generateReply } = require("./gemini");
 const { sendWhatsAppMessage } = require("./whatsapp");
 const { tryAcquire, markProcessed, release } = require("./messageDedup");
+const { getHistory, appendTurn } = require("./conversationHistory");
 const logger = require("./logger");
 const { extractWhatsAppEvents } = require("./whatsappParser");
 
@@ -48,18 +49,37 @@ async function processIncomingWhatsAppMessage(
       contact_name: contactName,
     };
 
+    let history = [];
+    try {
+      history = await getHistory(tenant.companyId, "whatsapp", from);
+    } catch (historyError) {
+      logger.log({
+        platform: PLATFORM,
+        level: "warn",
+        category: "ai",
+        event: "history.load_error",
+        userId: from,
+        messageId,
+        details: { error: historyError.message },
+      });
+    }
+
     logger.log({
       platform: PLATFORM,
       category: "ai",
       event: "ai.request",
       userId: from,
       messageId,
-      details: { companyId: tenant.companyId, ...aiInput },
+      details: {
+        companyId: tenant.companyId,
+        historyTurns: history.length,
+        ...aiInput,
+      },
     });
 
     let reply;
     try {
-      ({ reply } = await generateReply(aiInput, tenant));
+      ({ reply } = await generateReply(aiInput, tenant, history));
     } catch (aiError) {
       logger.log({
         platform: PLATFORM,
@@ -85,6 +105,20 @@ async function processIncomingWhatsAppMessage(
     });
 
     const result = await sendWhatsAppMessage(from, reply, tenant);
+
+    try {
+      await appendTurn(tenant.companyId, "whatsapp", from, text, reply, messageId);
+    } catch (historyError) {
+      logger.log({
+        platform: PLATFORM,
+        level: "warn",
+        category: "ai",
+        event: "history.save_error",
+        userId: from,
+        messageId,
+        details: { error: historyError.message },
+      });
+    }
 
     markProcessed(dedupKey);
 

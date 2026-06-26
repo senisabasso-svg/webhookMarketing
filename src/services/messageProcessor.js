@@ -1,6 +1,7 @@
 const { generateReply } = require("./gemini");
 const { sendInstagramMessage } = require("./meta");
 const { tryAcquire, markProcessed, release } = require("./messageDedup");
+const { getHistory, appendTurn } = require("./conversationHistory");
 const logger = require("./logger");
 const {
   extractMessagingEvents,
@@ -43,18 +44,37 @@ async function processIncomingMessage(
       message_id: messageId,
     };
 
+    let history = [];
+    try {
+      history = await getHistory(tenant.companyId, "instagram", userId);
+    } catch (historyError) {
+      logger.log({
+        platform: "instagram",
+        level: "warn",
+        category: "ai",
+        event: "history.load_error",
+        userId,
+        messageId,
+        details: { error: historyError.message },
+      });
+    }
+
     logger.log({
       platform: "instagram",
       category: "ai",
       event: "ai.request",
       userId,
       messageId,
-      details: { companyId: tenant.companyId, ...aiInput },
+      details: {
+        companyId: tenant.companyId,
+        historyTurns: history.length,
+        ...aiInput,
+      },
     });
 
     let reply;
     try {
-      ({ reply } = await generateReply(aiInput, tenant));
+      ({ reply } = await generateReply(aiInput, tenant, history));
     } catch (aiError) {
       logger.log({
         platform: "instagram",
@@ -80,6 +100,20 @@ async function processIncomingMessage(
     });
 
     const result = await sendInstagramMessage(userId, reply, tenant);
+
+    try {
+      await appendTurn(tenant.companyId, "instagram", userId, text, reply, messageId);
+    } catch (historyError) {
+      logger.log({
+        platform: "instagram",
+        level: "warn",
+        category: "ai",
+        event: "history.save_error",
+        userId,
+        messageId,
+        details: { error: historyError.message },
+      });
+    }
 
     markProcessed(dedupKey);
 

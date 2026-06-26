@@ -198,11 +198,60 @@ textarea {
   align-items: center;
   justify-content: center;
   padding: 1rem;
+  background: #ffffff;
 }
 
 .login-card {
   width: 100%;
   max-width: 400px;
+  background: #ffffff !important;
+  border: 1px solid #e0e0e0 !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  color: #111111;
+}
+
+.login-card label {
+  color: #111111;
+}
+
+.login-card input {
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  color: #111111;
+}
+
+.login-card input:focus {
+  outline: none;
+  border-color: #111111;
+  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.08);
+}
+
+.login-card .muted,
+.login-subtitle {
+  color: #666666;
+}
+
+.login-title {
+  margin: 0 0 0.35rem;
+  text-align: center;
+  font-size: 1.25rem;
+  color: #111111;
+}
+
+.login-subtitle {
+  text-align: center;
+  margin: 0 0 1.25rem;
+  font-size: 0.9rem;
+}
+
+.login-video {
+  width: min(200px, 70%);
+  height: auto;
+  display: block;
+  margin: 0 auto 1.25rem;
+  border-radius: 12px;
+  object-fit: contain;
+  background: #ffffff;
 }
 
 .muted {

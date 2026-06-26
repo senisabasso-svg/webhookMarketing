@@ -15,18 +15,32 @@ function isRetryableError(error) {
   );
 }
 
-function buildPrompt({ message, channel = "Instagram DM" }) {
-  return `Mensaje del usuario en ${channel}:\n"${message}"`;
+function toGeminiHistory(history = []) {
+  return history
+    .filter((h) => h.content && (h.role === "user" || h.role === "assistant"))
+    .map((h) => ({
+      role: h.role === "assistant" ? "model" : "user",
+      parts: [{ text: h.content }],
+    }));
 }
 
-async function generateWithModel(genAI, modelName, systemPrompt, prompt) {
+async function generateWithModel(genAI, modelName, systemPrompt, message, history) {
   const model = genAI.getGenerativeModel({
     model: modelName,
     systemInstruction: systemPrompt,
   });
 
-  const result = await model.generateContent(prompt);
-  const reply = result.response.text().trim();
+  const geminiHistory = toGeminiHistory(history);
+
+  let reply;
+  if (geminiHistory.length > 0) {
+    const chat = model.startChat({ history: geminiHistory });
+    const result = await chat.sendMessage(message);
+    reply = result.response.text().trim();
+  } else {
+    const result = await model.generateContent(message);
+    reply = result.response.text().trim();
+  }
 
   if (!reply) {
     throw new Error("Gemini devolvió una respuesta vacía");
@@ -35,12 +49,10 @@ async function generateWithModel(genAI, modelName, systemPrompt, prompt) {
   return reply;
 }
 
-async function generateReply(input, tenant = null) {
+async function generateReply(input, tenant = null, history = []) {
   const cfg = tenant || globalConfig;
   const genAI = new GoogleGenerativeAI(cfg.geminiApiKey);
-  const channel =
-    cfg.integrationType === "whatsapp" ? "WhatsApp" : "Instagram DM";
-  const prompt = buildPrompt({ ...input, channel });
+  const message = String(input.message || "").trim();
   const models = cfg.geminiModels || globalConfig.geminiModels;
   const systemPrompt = cfg.geminiSystemPrompt || globalConfig.geminiSystemPrompt;
   const maxRetries = 2;
@@ -53,7 +65,8 @@ async function generateReply(input, tenant = null) {
           genAI,
           modelName,
           systemPrompt,
-          prompt
+          message,
+          history
         );
         if (modelName !== models[0]) {
           console.log(`[ai] Respondió con modelo fallback: ${modelName}`);

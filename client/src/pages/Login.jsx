@@ -1,11 +1,29 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 
 export default function Login({ onLogin }) {
+  const videoRef = useRef(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    video.muted = true;
+    video.loop = true;
+    video.playsInline = true;
+
+    const play = () => {
+      video.play().catch(() => {});
+    };
+
+    play();
+    video.addEventListener("ended", play);
+    return () => video.removeEventListener("ended", play);
+  }, []);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -25,8 +43,18 @@ export default function Login({ onLogin }) {
   return (
     <div className="login-page">
       <div className="card login-card">
-        <h2 style={{ marginTop: 0 }}>Webhook Marketing</h2>
-        <p className="muted">Panel de administración</p>
+        <video
+          ref={videoRef}
+          className="login-video"
+          src="/assets/login-video.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+          aria-label="Febros Software Development"
+        />
+        <h2 className="login-title">Webhook Marketing</h2>
+        <p className="login-subtitle">Panel de administración</p>
 
         {error && <div className="error">{error}</div>}
 

@@ -36,6 +36,20 @@ CREATE TABLE IF NOT EXISTS integrations (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_integrations_emitter_type
   ON integrations(emitter_id, type)
   WHERE emitter_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS conversation_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id VARCHAR(64) NOT NULL,
+  platform VARCHAR(32) NOT NULL,
+  user_id VARCHAR(255) NOT NULL,
+  role VARCHAR(16) NOT NULL CHECK (role IN ('user', 'assistant')),
+  content TEXT NOT NULL,
+  message_id VARCHAR(255),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_lookup
+  ON conversation_messages(company_id, platform, user_id, created_at DESC);
 `;
 
 async function seedSuperAdmin(client) {
