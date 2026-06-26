@@ -1,16 +1,38 @@
 const express = require("express");
 const config = require("../config");
 const { handleWebhookPayload } = require("../services/messageProcessor");
+const { handleWhatsAppEvent } = require("../services/whatsappProcessor");
+const {
+  resolveInstagramTenant,
+  resolveWhatsAppTenant,
+} = require("../services/companyResolver");
+const integrationStore = require("../services/integrationStore");
+const { validateMetaSignature } = require("../middleware/metaSignature");
 const logger = require("../services/logger");
 
 const router = express.Router();
 
-router.get("/", (req, res) => {
+async function isValidVerifyToken(token) {
+  const tokens = new Set(
+    [config.verifyToken, config.whatsappVerifyToken].filter(Boolean)
+  );
+
+  try {
+    const dbTokens = await integrationStore.getAllVerifyTokens();
+    for (const t of dbTokens) tokens.add(t);
+  } catch {
+    // DB no disponible
+  }
+
+  return tokens.has(token);
+}
+
+router.get("/", async (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  if (mode === "subscribe" && token === config.verifyToken) {
+  if (mode === "subscribe" && (await isValidVerifyToken(token))) {
     logger.log({
       category: "webhook",
       event: "webhook.verify_success",
@@ -28,16 +50,68 @@ router.get("/", (req, res) => {
   return res.sendStatus(403);
 });
 
-router.post("/", (req, res) => {
+router.post("/", validateMetaSignature, (req, res) => {
   res.sendStatus(200);
 
-  handleWebhookPayload(req.body).catch((error) => {
-    logger.log({
-      level: "error",
-      category: "webhook",
-      event: "webhook.process_error",
-      details: { error: error.message },
-    });
+  const object = req.body?.object;
+
+  if (object === "instagram") {
+    resolveInstagramTenant(req.body)
+      .then((tenant) => {
+        if (!tenant) {
+          logger.log({
+            platform: "instagram",
+            level: "warn",
+            category: "webhook",
+            event: "webhook.unknown_tenant",
+          });
+          return;
+        }
+        return handleWebhookPayload(req.body, tenant);
+      })
+      .catch((error) => {
+        logger.log({
+          platform: "instagram",
+          level: "error",
+          category: "webhook",
+          event: "webhook.process_error",
+          details: { error: error.message },
+        });
+      });
+    return;
+  }
+
+  if (object === "whatsapp_business_account") {
+    resolveWhatsAppTenant(req.body)
+      .then((tenant) => {
+        if (!tenant) {
+          logger.log({
+            platform: "whatsapp",
+            level: "warn",
+            category: "webhook",
+            event: "webhook.unknown_tenant",
+          });
+          return;
+        }
+        return handleWhatsAppEvent(req.body, tenant);
+      })
+      .catch((error) => {
+        logger.log({
+          platform: "whatsapp",
+          level: "error",
+          category: "webhook",
+          event: "webhook.process_error",
+          details: { error: error.message },
+        });
+      });
+    return;
+  }
+
+  logger.log({
+    level: "warn",
+    category: "webhook",
+    event: "webhook.unknown_object",
+    details: { object: object ?? null },
   });
 });
 

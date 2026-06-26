@@ -1,18 +1,24 @@
 {
   "name": "instagram-webhook-marketing",
   "version": "1.0.0",
-  "description": "Webhook de Instagram DMs con respuestas generadas por Gemini",
+  "description": "Webhook de Instagram y WhatsApp con respuestas IA y panel multi-empresa",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "dev": "node --watch src/server.js",
+    "build:client": "npm install --prefix client && npm run build --prefix client",
+    "build": "npm run build:client"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.0",
+    "bcryptjs": "^3.0.2",
+    "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.7",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.0"
   }
 }

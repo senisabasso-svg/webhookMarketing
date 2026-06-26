@@ -1,5 +1,6 @@
 function formatConsole(entry) {
-  const base = `[${entry.category}] ${entry.event}`;
+  const prefix = entry.platform ? `[${entry.platform.toUpperCase()}] ` : "";
+  const base = `${prefix}[${entry.category}] ${entry.event}`;
   const ids = [entry.userId, entry.messageId].filter(Boolean).join(" | ");
   return ids ? `${base} (${ids})` : base;
 }

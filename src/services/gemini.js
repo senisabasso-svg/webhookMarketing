@@ -1,13 +1,5 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const config = require("../config");
-
-const genAI = new GoogleGenerativeAI(config.geminiApiKey);
-
-const DEFAULT_MODELS = [
-  "gemini-2.5-flash-lite",
-  "gemini-2.5-flash",
-  "gemini-flash-latest",
-];
+const globalConfig = require("../config");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -23,14 +15,14 @@ function isRetryableError(error) {
   );
 }
 
-function buildPrompt({ message }) {
-  return `Mensaje del usuario en Instagram DM:\n"${message}"`;
+function buildPrompt({ message, channel = "Instagram DM" }) {
+  return `Mensaje del usuario en ${channel}:\n"${message}"`;
 }
 
-async function generateWithModel(modelName, prompt) {
+async function generateWithModel(genAI, modelName, systemPrompt, prompt) {
   const model = genAI.getGenerativeModel({
     model: modelName,
-    systemInstruction: config.geminiSystemPrompt,
+    systemInstruction: systemPrompt,
   });
 
   const result = await model.generateContent(prompt);
@@ -43,21 +35,26 @@ async function generateWithModel(modelName, prompt) {
   return reply;
 }
 
-/**
- * Contrato interno:
- * Entrada: { user_id, message, message_id }
- * Salida:  { reply, model }
- */
-async function generateReply(input) {
-  const prompt = buildPrompt(input);
-  const models = config.geminiModels;
+async function generateReply(input, tenant = null) {
+  const cfg = tenant || globalConfig;
+  const genAI = new GoogleGenerativeAI(cfg.geminiApiKey);
+  const channel =
+    cfg.integrationType === "whatsapp" ? "WhatsApp" : "Instagram DM";
+  const prompt = buildPrompt({ ...input, channel });
+  const models = cfg.geminiModels || globalConfig.geminiModels;
+  const systemPrompt = cfg.geminiSystemPrompt || globalConfig.geminiSystemPrompt;
   const maxRetries = 2;
   const errors = [];
 
   for (const modelName of models) {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const reply = await generateWithModel(modelName, prompt);
+        const reply = await generateWithModel(
+          genAI,
+          modelName,
+          systemPrompt,
+          prompt
+        );
         if (modelName !== models[0]) {
           console.log(`[ai] Respondió con modelo fallback: ${modelName}`);
         }

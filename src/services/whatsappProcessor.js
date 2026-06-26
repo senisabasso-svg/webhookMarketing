@@ -1,24 +1,23 @@
 const { generateReply } = require("./gemini");
-const { sendInstagramMessage } = require("./meta");
+const { sendWhatsAppMessage } = require("./whatsapp");
 const { tryAcquire, markProcessed, release } = require("./messageDedup");
 const logger = require("./logger");
-const {
-  extractMessagingEvents,
-  logSkippedEvent,
-} = require("./messageParser");
+const { extractWhatsAppEvents } = require("./whatsappParser");
 
-async function processIncomingMessage(
-  { userId, text, messageId, raw },
+const PLATFORM = "whatsapp";
+
+async function processIncomingWhatsAppMessage(
+  { from, text, messageId, contactName, raw },
   tenant
 ) {
   const dedupKey = `${tenant.companyId}:${messageId}`;
 
   if (!tryAcquire(dedupKey)) {
     logger.log({
-      platform: "instagram",
+      platform: PLATFORM,
       category: "message",
       event: "message.skipped_duplicate",
-      userId,
+      userId: from,
       messageId,
       message: text,
       details: { companyId: tenant.companyId },
@@ -28,26 +27,32 @@ async function processIncomingMessage(
 
   try {
     logger.log({
-      platform: "instagram",
+      platform: PLATFORM,
       category: "message",
       event: "message.received",
-      userId,
+      userId: from,
       messageId,
       message: text,
-      details: { companyId: tenant.companyId, companyName: tenant.companyName, ...(raw ?? {}) },
+      details: {
+        companyId: tenant.companyId,
+        companyName: tenant.companyName,
+        contactName,
+        ...(raw ?? {}),
+      },
     });
 
     const aiInput = {
-      user_id: userId,
+      user_id: from,
       message: text,
       message_id: messageId,
+      contact_name: contactName,
     };
 
     logger.log({
-      platform: "instagram",
+      platform: PLATFORM,
       category: "ai",
       event: "ai.request",
-      userId,
+      userId: from,
       messageId,
       details: { companyId: tenant.companyId, ...aiInput },
     });
@@ -57,11 +62,11 @@ async function processIncomingMessage(
       ({ reply } = await generateReply(aiInput, tenant));
     } catch (aiError) {
       logger.log({
-        platform: "instagram",
+        platform: PLATFORM,
         level: "error",
         category: "ai",
         event: "ai.error",
-        userId,
+        userId: from,
         messageId,
         details: { companyId: tenant.companyId, error: aiError.message },
       });
@@ -70,24 +75,24 @@ async function processIncomingMessage(
     }
 
     logger.log({
-      platform: "instagram",
+      platform: PLATFORM,
       category: "ai",
       event: "ai.response",
-      userId,
+      userId: from,
       messageId,
       message: reply,
       details: { companyId: tenant.companyId },
     });
 
-    const result = await sendInstagramMessage(userId, reply, tenant);
+    const result = await sendWhatsAppMessage(from, reply, tenant);
 
     markProcessed(dedupKey);
 
     logger.log({
-      platform: "instagram",
+      platform: PLATFORM,
       category: "meta",
       event: "meta.sent",
-      userId,
+      userId: from,
       messageId,
       message: reply,
       details: { companyId: tenant.companyId, result },
@@ -98,11 +103,11 @@ async function processIncomingMessage(
     release(dedupKey);
 
     logger.log({
-      platform: "instagram",
+      platform: PLATFORM,
       level: "error",
       category: "message",
       event: "message.error",
-      userId,
+      userId: from,
       messageId,
       message: text,
       details: {
@@ -116,11 +121,9 @@ async function processIncomingMessage(
   }
 }
 
-async function handleWebhookPayload(payload, tenant) {
-  const messaging = payload?.entry?.flatMap((e) => e.messaging ?? []) ?? [];
-
+async function handleWhatsAppEvent(payload, tenant) {
   logger.log({
-    platform: "instagram",
+    platform: PLATFORM,
     category: "webhook",
     event: "webhook.received",
     details: {
@@ -128,25 +131,14 @@ async function handleWebhookPayload(payload, tenant) {
       companyName: tenant.companyName,
       object: payload?.object,
       entryCount: payload?.entry?.length ?? 0,
-      messaging,
     },
   });
 
-  const { events, invalidObject } = extractMessagingEvents(payload);
-
-  if (events.length === 0) {
-    logger.log({
-      platform: "instagram",
-      level: "warn",
-      category: "webhook",
-      event: "webhook.no_processable_events",
-      details: { companyId: tenant.companyId },
-    });
-  }
+  const { events, invalidObject } = extractWhatsAppEvents(payload);
 
   if (invalidObject) {
     logger.log({
-      platform: "instagram",
+      platform: PLATFORM,
       level: "warn",
       category: "webhook",
       event: "webhook.invalid_object",
@@ -155,31 +147,70 @@ async function handleWebhookPayload(payload, tenant) {
     return;
   }
 
+  if (events.length === 0) {
+    logger.log({
+      platform: PLATFORM,
+      level: "warn",
+      category: "webhook",
+      event: "webhook.no_processable_events",
+      details: { companyId: tenant.companyId },
+    });
+    return;
+  }
+
   for (const event of events) {
-    if (event.action === "skip") {
-      logSkippedEvent(event);
+    if (event.action === "status") {
+      logger.log({
+        platform: PLATFORM,
+        category: "message",
+        event: "message.status_update",
+        userId: event.recipientId,
+        messageId: event.messageId,
+        details: {
+          companyId: tenant.companyId,
+          status: event.status,
+          timestamp: event.timestamp,
+        },
+      });
       continue;
     }
 
-    if (!event.userId || !event.messageId) continue;
+    if (event.action === "skip") {
+      logger.log({
+        platform: PLATFORM,
+        category: "webhook",
+        event: "message.skipped",
+        userId: event.from,
+        messageId: event.messageId,
+        details: {
+          companyId: tenant.companyId,
+          reason: event.reason,
+          type: event.type,
+        },
+      });
+      continue;
+    }
+
+    if (!event.from || !event.messageId) continue;
 
     try {
-      await processIncomingMessage(
+      await processIncomingWhatsAppMessage(
         {
-          userId: event.userId,
+          from: event.from,
           text: event.text,
           messageId: event.messageId,
+          contactName: event.contactName,
           raw: event.raw,
         },
         tenant
       );
     } catch {
-      // El error ya quedó registrado en processIncomingMessage
+      // El error ya quedó registrado en processIncomingWhatsAppMessage
     }
   }
 }
 
 module.exports = {
-  processIncomingMessage,
-  handleWebhookPayload,
+  handleWhatsAppEvent,
+  processIncomingWhatsAppMessage,
 };

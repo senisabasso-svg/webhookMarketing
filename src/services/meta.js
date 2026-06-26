@@ -1,17 +1,19 @@
-const config = require("../config");
+const globalConfig = require("../config");
 
-async function sendInstagramMessage(recipientId, text) {
-  if (!config.isMetaTokenConfigured()) {
+async function sendInstagramMessage(recipientId, text, tenant = null) {
+  const cfg = tenant || globalConfig;
+
+  if (!cfg.isMetaTokenConfigured()) {
     throw new Error(
-      "META_ACCESS_TOKEN no configurado. Conectá tu cuenta de Instagram en Meta y pegá el token en .env"
+      "META_ACCESS_TOKEN no configurado para esta empresa"
     );
   }
 
-  const endpointId = config.messagesEndpointId();
+  const endpointId = cfg.messagesEndpointId();
   const url = new URL(
-    `${config.graphBaseUrl()}/${config.metaGraphVersion}/${endpointId}/messages`
+    `${cfg.graphBaseUrl()}/${cfg.metaGraphVersion}/${endpointId}/messages`
   );
-  url.searchParams.set("access_token", config.metaAccessToken);
+  url.searchParams.set("access_token", cfg.metaAccessToken);
 
   const body = {
     recipient: { id: recipientId },
