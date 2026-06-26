@@ -5,8 +5,6 @@ const {
 } = require("./leaderCommentConfig");
 const {
   sendInstagramPrivateReply,
-  sendInstagramMessage,
-  sendInstagramFileAttachment,
 } = require("./meta");
 const { tryAcquire, markProcessed, release } = require("./messageDedup");
 const logger = require("./logger");
@@ -51,9 +49,14 @@ async function processCommentEvent(event, tenant) {
       },
     });
 
-    await sendInstagramPrivateReply(
+    const replyMessage =
+      leaderConfig.pdfFilename && getPdfPublicUrl(leaderConfig.pdfFilename)
+        ? `${leaderConfig.replyText}\n\n📄 ${getPdfPublicUrl(leaderConfig.pdfFilename)}`
+        : leaderConfig.replyText;
+
+    const privateReplyResult = await sendInstagramPrivateReply(
       event.commentId,
-      leaderConfig.replyText,
+      replyMessage,
       tenant
     );
 
@@ -63,38 +66,13 @@ async function processCommentEvent(event, tenant) {
       event: "comment.private_reply_sent",
       userId: event.userId,
       messageId: event.commentId,
-      message: leaderConfig.replyText,
+      message: replyMessage,
+      details: {
+        recipientId: privateReplyResult?.recipient_id ?? null,
+        privateMessageId: privateReplyResult?.message_id ?? null,
+        pdfIncluded: Boolean(leaderConfig.pdfFilename),
+      },
     });
-
-    if (leaderConfig.pdfFilename && event.userId) {
-      const pdfUrl = getPdfPublicUrl(leaderConfig.pdfFilename);
-      try {
-        await sendInstagramFileAttachment(event.userId, pdfUrl, tenant);
-        logger.log({
-          platform: "instagram",
-          category: "comment",
-          event: "comment.pdf_sent",
-          userId: event.userId,
-          messageId: event.commentId,
-          details: { pdfUrl },
-        });
-      } catch (pdfError) {
-        logger.log({
-          platform: "instagram",
-          level: "warn",
-          category: "comment",
-          event: "comment.pdf_fallback_link",
-          userId: event.userId,
-          messageId: event.commentId,
-          details: { error: pdfError.message, pdfUrl },
-        });
-        await sendInstagramMessage(
-          event.userId,
-          `📄 Descargá el PDF acá: ${pdfUrl}`,
-          tenant
-        );
-      }
-    }
 
     markProcessed(dedupKey);
   } catch (error) {

@@ -46,9 +46,17 @@ async function sendInstagramMessage(recipientId, text, tenant = null) {
 
 async function sendInstagramPrivateReply(commentId, text, tenant = null) {
   const cfg = tenant || globalConfig;
-  const url = `${cfg.graphBaseUrl()}/${cfg.metaGraphVersion}/${commentId}/private_replies`;
+  const endpointId = cfg.messagesEndpointId();
+  const url = `${cfg.graphBaseUrl()}/${cfg.metaGraphVersion}/${endpointId}/messages`;
 
-  return metaPost(url, { message: text }, tenant);
+  return metaPost(
+    url,
+    {
+      recipient: { comment_id: String(commentId) },
+      message: { text },
+    },
+    tenant
+  );
 }
 
 async function sendInstagramFileAttachment(recipientId, fileUrl, tenant = null) {
