@@ -1,5 +1,6 @@
 const express = require("express");
 const { requireAuth } = require("../../services/auth");
+const config = require("../../config");
 const integrationStore = require("../../services/integrationStore");
 const { INTEGRATION_TYPES } = require("../../constants/integrationFields");
 
@@ -63,6 +64,13 @@ router.post("/companies", async (req, res) => {
 
 router.get("/integration-fields", (_req, res) => {
   res.json({ types: INTEGRATION_TYPES });
+});
+
+router.get("/febros-tracking", (_req, res) => {
+  res.json({
+    url: config.febrosClientTrackingUrl || null,
+    label: "Acceso seguimiento clientes febros",
+  });
 });
 
 module.exports = router;

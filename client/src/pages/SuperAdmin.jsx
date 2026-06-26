@@ -12,6 +12,7 @@ export default function SuperAdmin({ user, onLogout }) {
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [febrosTracking, setFebrosTracking] = useState(null);
 
   const [form, setForm] = useState({
     name: "",
@@ -34,6 +35,7 @@ export default function SuperAdmin({ user, onLogout }) {
 
   useEffect(() => {
     loadCompanies();
+    api.getFebrosTracking().then(setFebrosTracking).catch(() => {});
   }, []);
 
   function updateForm(key, value) {
@@ -92,9 +94,30 @@ export default function SuperAdmin({ user, onLogout }) {
           <h1>Superadmin</h1>
           <p className="muted">{user.email}</p>
         </div>
-        <button className="btn btn-secondary" onClick={onLogout}>
-          Salir
-        </button>
+        <div className="header-actions">
+          {febrosTracking?.url ? (
+            <a
+              className="btn btn-secondary"
+              href={febrosTracking.url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Acceso seguimiento clientes febros
+            </a>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled
+              title="Configurá FEBROS_CLIENT_TRACKING_URL en Railway"
+            >
+              Acceso seguimiento clientes febros
+            </button>
+          )}
+          <button className="btn btn-secondary" onClick={onLogout}>
+            Salir
+          </button>
+        </div>
       </header>
 
       {error && <div className="error">{error}</div>}

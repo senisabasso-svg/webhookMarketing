@@ -40,6 +40,7 @@ module.exports = {
   jwtSecret: process.env.JWT_SECRET || "dev-secret-cambiar-en-produccion",
   superadminEmail: process.env.SUPERADMIN_EMAIL || "",
   superadminPassword: process.env.SUPERADMIN_PASSWORD || "",
+  febrosClientTrackingUrl: process.env.FEBROS_CLIENT_TRACKING_URL || "",
   geminiApiKey: required("GEMINI_API_KEY"),
   geminiModel: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODELS[0],
   geminiModels: parseGeminiModels(),

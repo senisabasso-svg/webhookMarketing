@@ -34,6 +34,7 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   getIntegrationFields: () => request("/admin/integration-fields"),
+  getFebrosTracking: () => request("/admin/febros-tracking"),
   getCompany: () => request("/company/company"),
   getIntegration: (type) => request(`/company/integrations/${type}`),
   updateIntegration: (type, config) =>

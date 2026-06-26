@@ -44,6 +44,13 @@ a {
   border-bottom: 1px solid var(--border);
 }
 
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .header h1 {
   margin: 0;
   font-size: 1.35rem;
@@ -234,14 +241,30 @@ textarea {
 .login-title {
   margin: 0 0 0.35rem;
   text-align: center;
-  font-size: 1.25rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
   color: #111111;
 }
 
 .login-subtitle {
   text-align: center;
-  margin: 0 0 1.25rem;
+  margin: 0 0 0.5rem;
   font-size: 0.9rem;
+}
+
+.login-trademark {
+  text-align: center;
+  margin: 0 0 1.25rem;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: #888888;
+}
+
+.login-trademark strong {
+  color: #555555;
+  font-weight: 600;
 }
 
 .login-video {

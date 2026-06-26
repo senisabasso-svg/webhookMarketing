@@ -53,8 +53,12 @@ export default function Login({ onLogin }) {
           playsInline
           aria-label="Febros Software Development"
         />
-        <h2 className="login-title">Webhook Marketing</h2>
+        <h2 className="login-title">webhooks febros - 2026 -</h2>
         <p className="login-subtitle">Panel de administración</p>
+        <p className="login-trademark">
+          Marca registrada oficialmente por Febros Software Development,
+          Uruguay. <strong>febros s.a.</strong>
+        </p>
 
         {error && <div className="error">{error}</div>}
 
