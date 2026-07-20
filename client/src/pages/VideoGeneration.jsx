@@ -4,10 +4,9 @@ import { api } from "../api";
 
 export default function VideoGeneration({ user, onLogout }) {
   const [meta, setMeta] = useState(null);
+  const [provider, setProvider] = useState("svd");
   const [prompt, setPrompt] = useState("");
-  const [negativePrompt, setNegativePrompt] = useState("");
-  const [resolution, setResolution] = useState("720_16_9");
-  const [numOutputFrames, setNumOutputFrames] = useState(120);
+  const [cfgScale, setCfgScale] = useState(1.8);
   const [seed, setSeed] = useState("");
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState("");
@@ -18,7 +17,10 @@ export default function VideoGeneration({ user, onLogout }) {
   useEffect(() => {
     api
       .getVideoGenerationMeta()
-      .then(setMeta)
+      .then((data) => {
+        setMeta(data);
+        if (data.defaultProvider) setProvider(data.defaultProvider);
+      })
       .catch((err) => setError(err.message));
   }, []);
 
@@ -32,23 +34,34 @@ export default function VideoGeneration({ user, onLogout }) {
     return () => URL.revokeObjectURL(url);
   }, [imageFile]);
 
+  const selected = meta?.providers?.find((p) => p.id === provider);
+  const needsImage = selected?.requiresImage ?? true;
+  const needsPrompt = selected?.supportsPrompt ?? false;
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
     setResult(null);
 
-    if (!prompt.trim()) {
-      setError("Escribí un prompt para generar el video.");
+    if (needsImage && !imageFile) {
+      setError("Subí una imagen. Este modelo es image → video.");
+      return;
+    }
+    if (needsPrompt && !prompt.trim()) {
+      setError("Escribí un prompt.");
+      return;
+    }
+    if (imageFile && imageFile.size > 190 * 1024) {
+      setError("La imagen debe pesar menos de ~190KB (requisito de NVIDIA).");
       return;
     }
 
     setLoading(true);
     try {
       const data = await api.generateVideo({
+        provider,
         prompt: prompt.trim(),
-        negativePrompt: negativePrompt.trim(),
-        resolution,
-        numOutputFrames,
+        cfgScale,
         seed: seed === "" ? undefined : seed,
         imageFile,
       });
@@ -65,7 +78,7 @@ export default function VideoGeneration({ user, onLogout }) {
       <header className="header">
         <div>
           <h1>GENERACIÓN VIDEO</h1>
-          <p className="muted">{user.email} · NVIDIA Cosmos</p>
+          <p className="muted">{user.email} · NVIDIA (gratis)</p>
         </div>
         <div className="header-actions">
           <Link className="btn btn-secondary" to="/superadmin">
@@ -87,36 +100,52 @@ export default function VideoGeneration({ user, onLogout }) {
       )}
 
       <div className="card">
-        <h2>NVIDIA Cosmos 3 Nano</h2>
+        <h2>NVIDIA — video gratis</h2>
         <p className="muted card-hint">
-          Prompt obligatorio. Imagen opcional (image-to-video). La generación
-          puede tardar varios minutos.
+          Cosmos 3 Nano todavía no tiene API cloud pública. Por defecto usamos{" "}
+          <strong>Stable Video Diffusion</strong> (image → video), también gratis
+          en NVIDIA.
         </p>
-        {meta && (
-          <p className="muted card-hint">
-            Modelo: {meta.model} · Endpoint: {meta.baseUrl}/v1/images/generations
-          </p>
-        )}
+        <p className="muted card-hint">
+          Si te dice que el modelo no está habilitado para tu cuenta, abrí{" "}
+          <a
+            href="https://build.nvidia.com/stabilityai/stable-video-diffusion"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            esta página
+          </a>
+          , aceptá términos / Get API Key, y reintentá.
+        </p>
 
         <form onSubmit={handleSubmit}>
-          <label htmlFor="prompt">Prompt</label>
-          <textarea
-            id="prompt"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="A robot moves through a clean industrial warehouse."
-            required
+          <label htmlFor="provider">Modelo</label>
+          <select
+            id="provider"
+            value={provider}
+            onChange={(e) => setProvider(e.target.value)}
             disabled={loading}
-          />
+          >
+            {(meta?.providers || [{ id: "svd", label: "Stable Video Diffusion" }]).map(
+              (p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              )
+            )}
+          </select>
 
-          <label htmlFor="image">Imagen (opcional)</label>
+          <label htmlFor="image">
+            Imagen {needsImage ? "(obligatoria)" : "(opcional)"}
+          </label>
           <input
             id="image"
             type="file"
-            accept="image/*"
+            accept="image/png,image/jpeg,image/jpg"
             disabled={loading}
             onChange={(e) => setImageFile(e.target.files?.[0] || null)}
           />
+          <p className="muted card-hint">Máx. ~190KB · jpg/png</p>
           {imagePreview && (
             <div className="video-preview-wrap">
               <img
@@ -127,34 +156,39 @@ export default function VideoGeneration({ user, onLogout }) {
             </div>
           )}
 
+          {needsPrompt && (
+            <>
+              <label htmlFor="prompt">Prompt</label>
+              <textarea
+                id="prompt"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="Describe el video..."
+                disabled={loading}
+              />
+            </>
+          )}
+
+          {!needsPrompt && (
+            <p className="muted card-hint">
+              SVD anima la imagen que subís (no usa prompt de texto).
+            </p>
+          )}
+
           <div className="grid-2">
             <div>
-              <label htmlFor="resolution">Resolución</label>
-              <select
-                id="resolution"
-                value={resolution}
-                onChange={(e) => setResolution(e.target.value)}
-                disabled={loading}
-              >
-                <option value="720_16_9">720p 16:9</option>
-                <option value="1080_16_9">1080p 16:9</option>
-              </select>
-            </div>
-            <div>
-              <label htmlFor="frames">Frames (1–189)</label>
+              <label htmlFor="cfg">cfg_scale (1.01–9)</label>
               <input
-                id="frames"
+                id="cfg"
                 type="number"
-                min={1}
-                max={189}
-                value={numOutputFrames}
-                onChange={(e) => setNumOutputFrames(Number(e.target.value))}
+                min={1.01}
+                max={9}
+                step={0.1}
+                value={cfgScale}
+                onChange={(e) => setCfgScale(Number(e.target.value))}
                 disabled={loading}
               />
             </div>
-          </div>
-
-          <div className="grid-2">
             <div>
               <label htmlFor="seed">Seed (opcional)</label>
               <input
@@ -162,18 +196,7 @@ export default function VideoGeneration({ user, onLogout }) {
                 type="number"
                 value={seed}
                 onChange={(e) => setSeed(e.target.value)}
-                placeholder="42"
-                disabled={loading}
-              />
-            </div>
-            <div>
-              <label htmlFor="negative">Negative prompt (opcional)</label>
-              <input
-                id="negative"
-                type="text"
-                value={negativePrompt}
-                onChange={(e) => setNegativePrompt(e.target.value)}
-                placeholder="blurry, low quality..."
+                placeholder="0 = random"
                 disabled={loading}
               />
             </div>
@@ -188,8 +211,7 @@ export default function VideoGeneration({ user, onLogout }) {
           </button>
           {loading && (
             <p className="muted card-hint" style={{ marginTop: "0.75rem" }}>
-              Esperá… Cosmos puede demorar varios minutos. No cierres esta
-              pestaña.
+              Puede demorar 1–3 minutos. No cierres la pestaña.
             </p>
           )}
         </form>
@@ -199,7 +221,8 @@ export default function VideoGeneration({ user, onLogout }) {
         <div className="card">
           <h2>Video generado</h2>
           <p className="muted card-hint">
-            {result.resolution} · {result.numOutputFrames} frames · {result.model}
+            {result.model}
+            {result.seed != null ? ` · seed ${result.seed}` : ""}
           </p>
           <video
             className="generated-video"
@@ -211,7 +234,7 @@ export default function VideoGeneration({ user, onLogout }) {
             <a
               className="btn btn-secondary"
               href={result.videoUrl}
-              download={result.filename || "cosmos-video.mp4"}
+              download={result.filename || "nvidia-video.mp4"}
             >
               Descargar MP4
             </a>

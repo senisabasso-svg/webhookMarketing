@@ -57,20 +57,24 @@ export const api = {
     request("/admin/leader-comment/pdf", { method: "DELETE" }),
   getVideoGenerationMeta: () => request("/admin/video-generation"),
   generateVideo: async ({
+    provider,
     prompt,
     negativePrompt,
     resolution,
     numOutputFrames,
     seed,
+    cfgScale,
     imageFile,
   }) => {
     const form = new FormData();
-    form.append("prompt", prompt);
+    if (provider) form.append("provider", provider);
+    if (prompt) form.append("prompt", prompt);
     if (negativePrompt) form.append("negativePrompt", negativePrompt);
     if (resolution) form.append("resolution", resolution);
     if (numOutputFrames != null) {
       form.append("numOutputFrames", String(numOutputFrames));
     }
+    if (cfgScale != null) form.append("cfgScale", String(cfgScale));
     if (seed !== undefined && seed !== null && seed !== "") {
       form.append("seed", String(seed));
     }

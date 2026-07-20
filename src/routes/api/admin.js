@@ -81,10 +81,11 @@ router.get("/febros-tracking", (_req, res) => {
 router.get("/video-generation", (_req, res) => {
   res.json({
     configured: config.isNvidiaConfigured(),
-    model: config.nvidiaVideoModel,
-    baseUrl: config.nvidiaBaseUrl,
-    resolutions: ["720_16_9", "1080_16_9"],
-    maxFrames: 189,
+    model: "stabilityai/stable-video-diffusion",
+    providers: nvidiaCosmos.listProviders(),
+    defaultProvider: "svd",
+    note:
+      "Por defecto usamos Stable Video Diffusion (gratis NVIDIA, image→video). Cosmos 3 Nano aún no tiene API cloud pública.",
   });
 });
 
@@ -101,35 +102,52 @@ router.post("/video-generation", (req, res) => {
       });
     }
 
-    const prompt = req.body?.prompt;
-    if (!String(prompt || "").trim()) {
-      return res.status(400).json({ error: "El prompt es requerido" });
-    }
+    const provider = req.body?.provider || "svd";
+    const prompt = String(req.body?.prompt || "").trim();
 
     let imageDataUri = null;
     if (req.file?.buffer) {
+      const maxBytes = 190 * 1024;
+      if (req.file.buffer.length > maxBytes) {
+        return res.status(400).json({
+          error:
+            "La imagen supera ~190KB. Comprimila o usá una más chica (requisito de NVIDIA).",
+        });
+      }
       imageDataUri = nvidiaCosmos.bufferToDataUri(
         req.file.buffer,
         req.file.mimetype || "image/jpeg"
       );
     }
 
+    if (provider === "svd" && !imageDataUri) {
+      return res.status(400).json({
+        error: "Stable Video Diffusion requiere una imagen (image → video).",
+      });
+    }
+
+    if (provider === "cosmos3" && !prompt) {
+      return res.status(400).json({ error: "El prompt es requerido para Cosmos" });
+    }
+
     try {
       const result = await nvidiaCosmos.generateVideo({
+        provider,
         prompt,
         imageDataUri,
+        seed: req.body?.seed,
+        cfgScale: req.body?.cfgScale || 1.8,
         resolution: req.body?.resolution || "720_16_9",
         numOutputFrames: req.body?.numOutputFrames || 120,
-        seed: req.body?.seed,
         negativePrompt: req.body?.negativePrompt || "",
       });
 
       res.json({
         videoUrl: result.videoUrl,
         filename: result.filename,
-        resolution: result.resolution,
-        numOutputFrames: result.numOutputFrames,
         model: result.model,
+        provider: result.provider,
+        seed: result.seed ?? null,
       });
     } catch (error) {
       console.error(
