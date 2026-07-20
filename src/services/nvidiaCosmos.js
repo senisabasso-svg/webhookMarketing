@@ -149,7 +149,10 @@ async function invokeNvidia(url, payload) {
 
       if (response.status === 404) {
         const err = new Error(
-          "Endpoint NVIDIA no disponible (404). El modelo cloud puede no estar publicado para cuentas free."
+          "Endpoint NVIDIA no disponible (404). " +
+            "Para video GenAI la base debe ser https://ai.api.nvidia.com " +
+            "(no integrate.api.nvidia.com). Si ya está así, el modelo no está " +
+            "publicado para cuentas free / hay que activarlo en build.nvidia.com."
         );
         err.status = 404;
         err.nvidiaError = data;
