@@ -10,18 +10,23 @@ const PROVIDERS = {
   svd: {
     id: "svd",
     label: "Stable Video Diffusion (image → video)",
-    endpoint: "https://ai.api.nvidia.com/v1/genai/stabilityai/stable-video-diffusion",
+    path: "/v1/genai/stabilityai/stable-video-diffusion",
     requiresImage: true,
     supportsPrompt: false,
   },
   cosmos3: {
     id: "cosmos3",
     label: "Cosmos 3 Nano (aún no disponible en cloud)",
-    endpoint: null,
+    path: null,
     requiresImage: false,
     supportsPrompt: true,
   },
 };
+
+function providerEndpoint(provider) {
+  if (!provider?.path) return null;
+  return `${config.nvidiaBaseUrl}${provider.path}`;
+}
 
 function ensureUploadDir() {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -201,7 +206,7 @@ async function generateWithSvd({ imageDataUri, seed = null, cfgScale = 1.8 }) {
         : 0,
   };
 
-  const data = await invokeNvidia(PROVIDERS.svd.endpoint, payload);
+  const data = await invokeNvidia(providerEndpoint(PROVIDERS.svd), payload);
   const videoB64 = data.video || data.b64_video || data?.data?.[0]?.b64_json;
   if (!videoB64) {
     throw new Error("NVIDIA no devolvió el campo video en la respuesta");
