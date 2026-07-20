@@ -5,28 +5,7 @@ const config = require("../config");
 const UPLOAD_DIR = path.join(__dirname, "..", "..", "uploads", "videos");
 const GENERATION_TIMEOUT_MS = 10 * 60 * 1000;
 const POLL_INTERVAL_MS = 2500;
-
-const PROVIDERS = {
-  svd: {
-    id: "svd",
-    label: "Stable Video Diffusion (image → video)",
-    path: "/v1/genai/stabilityai/stable-video-diffusion",
-    requiresImage: true,
-    supportsPrompt: false,
-  },
-  cosmos3: {
-    id: "cosmos3",
-    label: "Cosmos 3 Nano (aún no disponible en cloud)",
-    path: null,
-    requiresImage: false,
-    supportsPrompt: true,
-  },
-};
-
-function providerEndpoint(provider) {
-  if (!provider?.path) return null;
-  return `${config.nvidiaBaseUrl}${provider.path}`;
-}
+const HISTORY_LIMIT = 20;
 
 function ensureUploadDir() {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -40,17 +19,20 @@ function bufferToDataUri(buffer, mimeType) {
   return `data:${mimeType};base64,${buffer.toString("base64")}`;
 }
 
-function listProviders() {
-  return Object.values(PROVIDERS).map((p) => ({
-    id: p.id,
-    label: p.label,
-    requiresImage: p.requiresImage,
-    supportsPrompt: p.supportsPrompt,
-  }));
-}
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getInvokeUrl() {
+  // Preferí function ID NVCF si está configurado
+  if (config.nvidiaNvcfFunctionId) {
+    return `https://api.nvcf.nvidia.com/v2/nvcf/pexec/functions/${config.nvidiaNvcfFunctionId}`;
+  }
+  // Endpoint GenAI oficial de SVD (image→video)
+  const modelPath =
+    config.nvidiaVideoModelPath ||
+    "/v1/genai/stabilityai/stable-video-diffusion";
+  return `${config.nvidiaBaseUrl}${modelPath}`;
 }
 
 async function nvidiaFetch(url, { method = "POST", body = null, signal } = {}) {
@@ -104,12 +86,43 @@ async function pollNvcf(requestId, signal) {
   throw new Error("La generación de video tardó demasiado (timeout 10 min)");
 }
 
-async function invokeNvidia(url, payload) {
+function mapNvidiaError(response, data) {
+  if (
+    response.status === 404 &&
+    String(data?.detail || "").includes("Not found for account")
+  ) {
+    return new Error(
+      "Tu cuenta NVIDIA no tiene habilitado Stable Video Diffusion. " +
+        "Entrá a https://build.nvidia.com/stabilityai/stable-video-diffusion , " +
+        "aceptá los términos y asociá la API key. Después redeploy en Railway."
+    );
+  }
+
+  if (response.status === 404) {
+    return new Error(
+      "Endpoint NVIDIA no disponible (404). " +
+        "Usá NVIDIA_BASE_URL=https://ai.api.nvidia.com " +
+        "o configurá NVIDIA_NVCF_FUNCTION_ID con el UUID del modelo."
+    );
+  }
+
+  return new Error(
+    data?.detail ||
+      data?.error?.message ||
+      data?.message ||
+      data?.title ||
+      (typeof data?.error === "string" ? data.error : null) ||
+      `Error NVIDIA ${response.status}`
+  );
+}
+
+async function invokeNvidia(payload) {
+  const url = getInvokeUrl();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
 
   try {
-    let response = await nvidiaFetch(url, {
+    const response = await nvidiaFetch(url, {
       method: "POST",
       body: payload,
       signal: controller.signal,
@@ -132,41 +145,7 @@ async function invokeNvidia(url, payload) {
     }
 
     if (!response.ok) {
-      if (
-        response.status === 404 &&
-        String(data?.detail || "").includes("Not found for account")
-      ) {
-        const err = new Error(
-          "Tu cuenta NVIDIA no tiene habilitado Stable Video Diffusion. " +
-            "Entrá a https://build.nvidia.com/stabilityai/stable-video-diffusion , " +
-            "aceptá los términos y generá/vinculá la API key a ese modelo. " +
-            "Después reiniciá y volvé a probar."
-        );
-        err.status = 404;
-        err.nvidiaError = data;
-        throw err;
-      }
-
-      if (response.status === 404) {
-        const err = new Error(
-          "Endpoint NVIDIA no disponible (404). " +
-            "Para video GenAI la base debe ser https://ai.api.nvidia.com " +
-            "(no integrate.api.nvidia.com). Si ya está así, el modelo no está " +
-            "publicado para cuentas free / hay que activarlo en build.nvidia.com."
-        );
-        err.status = 404;
-        err.nvidiaError = data;
-        throw err;
-      }
-
-      const message =
-        data?.detail ||
-        data?.error?.message ||
-        data?.message ||
-        data?.title ||
-        (typeof data?.error === "string" ? data.error : null) ||
-        `Error NVIDIA ${response.status}`;
-      const err = new Error(message);
+      const err = mapNvidiaError(response, data);
       err.status = response.status;
       err.nvidiaError = data;
       throw err;
@@ -183,33 +162,93 @@ async function invokeNvidia(url, payload) {
   }
 }
 
-function saveVideoFromBase64(videoB64) {
+function saveVideoFromBase64(videoB64, meta = {}) {
   ensureUploadDir();
-  const filename = `nvidia-${Date.now()}.mp4`;
+  const filename = `svd-${Date.now()}.mp4`;
   const filePath = path.join(UPLOAD_DIR, filename);
   const cleanB64 = String(videoB64).replace(/^data:video\/\w+;base64,/, "");
   fs.writeFileSync(filePath, Buffer.from(cleanB64, "base64"));
+
+  const metaPath = path.join(UPLOAD_DIR, `${filename}.json`);
+  fs.writeFileSync(
+    metaPath,
+    JSON.stringify(
+      {
+        filename,
+        createdAt: new Date().toISOString(),
+        model: meta.model || config.nvidiaVideoModel,
+        seed: meta.seed ?? null,
+        cfgScale: meta.cfgScale ?? null,
+      },
+      null,
+      2
+    )
+  );
+
   return {
     filename,
     videoUrl: `/files/videos/${encodeURIComponent(filename)}`,
   };
 }
 
-async function generateWithSvd({ imageDataUri, seed = null, cfgScale = 1.8 }) {
+function listHistory(limit = HISTORY_LIMIT) {
+  ensureUploadDir();
+  const files = fs
+    .readdirSync(UPLOAD_DIR)
+    .filter((f) => f.endsWith(".mp4"))
+    .map((filename) => {
+      const full = path.join(UPLOAD_DIR, filename);
+      const stat = fs.statSync(full);
+      let meta = {};
+      const metaFile = path.join(UPLOAD_DIR, `${filename}.json`);
+      if (fs.existsSync(metaFile)) {
+        try {
+          meta = JSON.parse(fs.readFileSync(metaFile, "utf8"));
+        } catch {
+          meta = {};
+        }
+      }
+      return {
+        filename,
+        videoUrl: `/files/videos/${encodeURIComponent(filename)}`,
+        createdAt: meta.createdAt || stat.mtime.toISOString(),
+        model: meta.model || config.nvidiaVideoModel,
+        seed: meta.seed ?? null,
+        cfgScale: meta.cfgScale ?? null,
+        sizeBytes: stat.size,
+      };
+    })
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, limit);
+
+  return files;
+}
+
+async function generateVideo({
+  imageDataUri,
+  seed = null,
+  cfgScale = 1.8,
+} = {}) {
+  if (!config.isNvidiaConfigured()) {
+    throw new Error("NVIDIA_API_KEY no configurada en el .env / Railway");
+  }
   if (!imageDataUri) {
-    throw new Error("Stable Video Diffusion requiere una imagen");
+    throw new Error("Stable Video Diffusion requiere una imagen (JPG/PNG)");
   }
 
   const payload = {
     image: imageDataUri,
+    // API NVIDIA: cfg_scale entre >1 y 9
     cfg_scale: Math.min(9, Math.max(1.01, Number(cfgScale) || 1.8)),
     seed:
       seed !== null && seed !== undefined && String(seed).trim() !== ""
         ? Number(seed)
         : 0,
+    // Único valor soportado por el NIM hosted
+    motion_bucket_id: 127,
   };
 
-  const data = await invokeNvidia(providerEndpoint(PROVIDERS.svd), payload);
+  const data = await invokeNvidia(payload);
   const videoB64 = data.video || data.b64_video || data?.data?.[0]?.b64_json;
   if (!videoB64) {
     throw new Error("NVIDIA no devolvió el campo video en la respuesta");
@@ -219,34 +258,41 @@ async function generateWithSvd({ imageDataUri, seed = null, cfgScale = 1.8 }) {
     throw new Error(`NVIDIA finalizó con: ${data.finish_reason}`);
   }
 
-  const saved = saveVideoFromBase64(videoB64);
+  const saved = saveVideoFromBase64(videoB64, {
+    model: config.nvidiaVideoModel,
+    seed: data.seed ?? payload.seed,
+    cfgScale: payload.cfg_scale,
+  });
+
   return {
     ...saved,
-    model: "stabilityai/stable-video-diffusion",
+    model: config.nvidiaVideoModel,
     provider: "svd",
     seed: data.seed ?? payload.seed,
+    cfgScale: payload.cfg_scale,
+    invokeUrl: getInvokeUrl(),
   };
 }
 
-async function generateWithCosmos3() {
-  throw new Error(
-    "Cosmos 3 Nano todavía no tiene endpoint cloud público (404). " +
-      "Usá Stable Video Diffusion o esperá a que NVIDIA lo habilite."
-  );
-}
-
-async function generateVideo(options = {}) {
-  if (!config.isNvidiaConfigured()) {
-    throw new Error("NVIDIA_API_KEY no configurada en el .env");
-  }
-
-  const provider = options.provider || "svd";
-
-  if (provider === "cosmos3") {
-    return generateWithCosmos3(options);
-  }
-
-  return generateWithSvd(options);
+function getMeta() {
+  return {
+    configured: config.isNvidiaConfigured(),
+    model: config.nvidiaVideoModel,
+    invokeUrl: config.isNvidiaConfigured() ? getInvokeUrl() : null,
+    baseUrl: config.nvidiaBaseUrl,
+    hasFunctionId: Boolean(config.nvidiaNvcfFunctionId),
+    limits: {
+      maxImageBytes: 190 * 1024,
+      cfgScale: { min: 1.01, max: 9, default: 1.8 },
+      // La API cloud de NVIDIA fija estos valores (no son configurables)
+      fixedFrames: 25,
+      fixedResolution: "1024x576",
+      motionBucketId: 127,
+    },
+    note:
+      "Image→video. La API cloud de NVIDIA fija ~25 frames a 1024x576. " +
+      "cfg_scale controla fidelidad a la imagen; seed reproduce el resultado.",
+  };
 }
 
 module.exports = {
@@ -254,6 +300,7 @@ module.exports = {
   ensureUploadDir,
   getUploadDir,
   bufferToDataUri,
-  listProviders,
-  PROVIDERS,
+  listHistory,
+  getMeta,
+  getInvokeUrl,
 };

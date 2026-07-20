@@ -70,11 +70,17 @@ module.exports = {
   metaApiHost: process.env.META_API_HOST || "facebook",
 
   nvidiaApiKey: process.env.NVIDIA_API_KEY || "",
-  // GenAI video/imagen usa ai.api.nvidia.com (NO integrate.api.nvidia.com)
+  // GenAI video: https://ai.api.nvidia.com (NO integrate.api.nvidia.com)
   nvidiaBaseUrl: (
     process.env.NVIDIA_BASE_URL || "https://ai.api.nvidia.com"
   ).replace(/\/$/, ""),
-  nvidiaVideoModel: process.env.NVIDIA_VIDEO_MODEL || "stabilityai/stable-video-diffusion",
+  nvidiaVideoModel:
+    process.env.NVIDIA_VIDEO_MODEL || "stabilityai/stable-video-diffusion",
+  nvidiaVideoModelPath:
+    process.env.NVIDIA_VIDEO_MODEL_PATH ||
+    "/v1/genai/stabilityai/stable-video-diffusion",
+  // UUID opcional si usás NVCF pexec directo
+  nvidiaNvcfFunctionId: process.env.NVIDIA_NVCF_FUNCTION_ID || "",
 
   graphBaseUrl() {
     return this.metaApiHost === "instagram"

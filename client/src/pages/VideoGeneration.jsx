@@ -1,27 +1,49 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 
+const LOCAL_HISTORY_KEY = "febros_svd_history";
+
+function loadLocalHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_HISTORY_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalHistory(items) {
+  localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(items.slice(0, 12)));
+}
+
 export default function VideoGeneration({ user, onLogout }) {
   const [meta, setMeta] = useState(null);
-  const [provider, setProvider] = useState("svd");
-  const [prompt, setPrompt] = useState("");
   const [cfgScale, setCfgScale] = useState(1.8);
   const [seed, setSeed] = useState("");
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState("");
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
+  const [history, setHistory] = useState([]);
+  const progressTimer = useRef(null);
+
+  async function refreshHistory() {
+    try {
+      const data = await api.getVideoHistory();
+      setHistory(data.history || []);
+    } catch {
+      setHistory(loadLocalHistory());
+    }
+  }
 
   useEffect(() => {
     api
       .getVideoGenerationMeta()
-      .then((data) => {
-        setMeta(data);
-        if (data.defaultProvider) setProvider(data.defaultProvider);
-      })
+      .then(setMeta)
       .catch((err) => setError(err.message));
+    refreshHistory();
   }, []);
 
   useEffect(() => {
@@ -34,39 +56,66 @@ export default function VideoGeneration({ user, onLogout }) {
     return () => URL.revokeObjectURL(url);
   }, [imageFile]);
 
-  const selected = meta?.providers?.find((p) => p.id === provider);
-  const needsImage = selected?.requiresImage ?? true;
-  const needsPrompt = selected?.supportsPrompt ?? false;
+  useEffect(() => {
+    return () => {
+      if (progressTimer.current) clearInterval(progressTimer.current);
+    };
+  }, []);
+
+  function startProgress() {
+    setProgress(8);
+    if (progressTimer.current) clearInterval(progressTimer.current);
+    progressTimer.current = setInterval(() => {
+      setProgress((p) => {
+        if (p >= 92) return p;
+        return p + Math.max(1, Math.round((92 - p) * 0.04));
+      });
+    }, 1200);
+  }
+
+  function stopProgress(ok) {
+    if (progressTimer.current) clearInterval(progressTimer.current);
+    setProgress(ok ? 100 : 0);
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
     setResult(null);
 
-    if (needsImage && !imageFile) {
-      setError("Subí una imagen. Este modelo es image → video.");
+    if (!imageFile) {
+      setError("Subí una imagen JPG/PNG. Este modelo es image → video.");
       return;
     }
-    if (needsPrompt && !prompt.trim()) {
-      setError("Escribí un prompt.");
-      return;
-    }
-    if (imageFile && imageFile.size > 190 * 1024) {
+    if (imageFile.size > 190 * 1024) {
       setError("La imagen debe pesar menos de ~190KB (requisito de NVIDIA).");
+      return;
+    }
+    if (cfgScale < 1.01 || cfgScale > 9) {
+      setError("cfg_scale debe estar entre 1.01 y 9.");
       return;
     }
 
     setLoading(true);
+    startProgress();
     try {
       const data = await api.generateVideo({
-        provider,
-        prompt: prompt.trim(),
         cfgScale,
         seed: seed === "" ? undefined : seed,
         imageFile,
       });
       setResult(data);
+      stopProgress(true);
+
+      const localItem = {
+        ...data,
+        createdAt: new Date().toISOString(),
+      };
+      const nextLocal = [localItem, ...loadLocalHistory()].slice(0, 12);
+      saveLocalHistory(nextLocal);
+      await refreshHistory();
     } catch (err) {
+      stopProgress(false);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -78,7 +127,7 @@ export default function VideoGeneration({ user, onLogout }) {
       <header className="header">
         <div>
           <h1>GENERACIÓN VIDEO</h1>
-          <p className="muted">{user.email} · NVIDIA (gratis)</p>
+          <p className="muted">{user.email} · Stable Video Diffusion</p>
         </div>
         <div className="header-actions">
           <Link className="btn btn-secondary" to="/superadmin">
@@ -94,50 +143,28 @@ export default function VideoGeneration({ user, onLogout }) {
 
       {meta && !meta.configured && (
         <div className="error">
-          Falta <code>NVIDIA_API_KEY</code> en el .env. Agregala y reiniciá el
-          servidor local.
+          Falta <code>NVIDIA_API_KEY</code> en Railway / .env.
         </div>
       )}
 
       <div className="card">
-        <h2>NVIDIA — video gratis</h2>
+        <h2>Stable Video Diffusion — Image → Video</h2>
         <p className="muted card-hint">
-          Cosmos 3 Nano todavía no tiene API cloud pública. Por defecto usamos{" "}
-          <strong>Stable Video Diffusion</strong> (image → video), también gratis
-          en NVIDIA.
+          {meta?.note ||
+            "Subí una imagen y generá un MP4 corto animado con NVIDIA NIM."}
         </p>
+        {meta?.invokeUrl && (
+          <p className="muted card-hint">
+            Endpoint: <code>{meta.invokeUrl}</code>
+          </p>
+        )}
         <p className="muted card-hint">
-          Si te dice que el modelo no está habilitado para tu cuenta, abrí{" "}
-          <a
-            href="https://build.nvidia.com/stabilityai/stable-video-diffusion"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            esta página
-          </a>
-          , aceptá términos / Get API Key, y reintentá.
+          API cloud fija ~{meta?.limits?.fixedFrames || 25} frames a{" "}
+          {meta?.limits?.fixedResolution || "1024x576"} (no configurable).
         </p>
 
         <form onSubmit={handleSubmit}>
-          <label htmlFor="provider">Modelo</label>
-          <select
-            id="provider"
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-            disabled={loading}
-          >
-            {(meta?.providers || [{ id: "svd", label: "Stable Video Diffusion" }]).map(
-              (p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              )
-            )}
-          </select>
-
-          <label htmlFor="image">
-            Imagen {needsImage ? "(obligatoria)" : "(opcional)"}
-          </label>
+          <label htmlFor="image">Imagen (obligatoria)</label>
           <input
             id="image"
             type="file"
@@ -145,7 +172,7 @@ export default function VideoGeneration({ user, onLogout }) {
             disabled={loading}
             onChange={(e) => setImageFile(e.target.files?.[0] || null)}
           />
-          <p className="muted card-hint">Máx. ~190KB · jpg/png</p>
+          <p className="muted card-hint">Máx. ~190KB · JPG/PNG</p>
           {imagePreview && (
             <div className="video-preview-wrap">
               <img
@@ -156,28 +183,9 @@ export default function VideoGeneration({ user, onLogout }) {
             </div>
           )}
 
-          {needsPrompt && (
-            <>
-              <label htmlFor="prompt">Prompt</label>
-              <textarea
-                id="prompt"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Describe el video..."
-                disabled={loading}
-              />
-            </>
-          )}
-
-          {!needsPrompt && (
-            <p className="muted card-hint">
-              SVD anima la imagen que subís (no usa prompt de texto).
-            </p>
-          )}
-
           <div className="grid-2">
             <div>
-              <label htmlFor="cfg">cfg_scale (1.01–9)</label>
+              <label htmlFor="cfg">Fidelidad / cfg_scale (1.01–9)</label>
               <input
                 id="cfg"
                 type="number"
@@ -188,9 +196,12 @@ export default function VideoGeneration({ user, onLogout }) {
                 onChange={(e) => setCfgScale(Number(e.target.value))}
                 disabled={loading}
               />
+              <p className="muted card-hint">
+                Más alto = se parece más a la imagen original.
+              </p>
             </div>
             <div>
-              <label htmlFor="seed">Seed (opcional)</label>
+              <label htmlFor="seed">Seed (reproducibilidad)</label>
               <input
                 id="seed"
                 type="number"
@@ -202,6 +213,25 @@ export default function VideoGeneration({ user, onLogout }) {
             </div>
           </div>
 
+          <div className="grid-2">
+            <div>
+              <label>Frames (fijo API)</label>
+              <input
+                type="text"
+                value={`${meta?.limits?.fixedFrames || 25} (no editable)`}
+                disabled
+              />
+            </div>
+            <div>
+              <label>Resolución (fija API)</label>
+              <input
+                type="text"
+                value={`${meta?.limits?.fixedResolution || "1024x576"} (no editable)`}
+                disabled
+              />
+            </div>
+          </div>
+
           <button
             type="submit"
             className="btn"
@@ -209,10 +239,15 @@ export default function VideoGeneration({ user, onLogout }) {
           >
             {loading ? "Generando video..." : "Generar video"}
           </button>
+
           {loading && (
-            <p className="muted card-hint" style={{ marginTop: "0.75rem" }}>
-              Puede demorar 1–3 minutos. No cierres la pestaña.
-            </p>
+            <div className="progress-wrap">
+              <div className="progress-bar" style={{ width: `${progress}%` }} />
+              <p className="muted card-hint">
+                Generando… {progress}% · puede tardar 1–3 min. No cierres la
+                pestaña.
+              </p>
+            </div>
           )}
         </form>
       </div>
@@ -223,24 +258,64 @@ export default function VideoGeneration({ user, onLogout }) {
           <p className="muted card-hint">
             {result.model}
             {result.seed != null ? ` · seed ${result.seed}` : ""}
+            {result.cfgScale != null ? ` · cfg ${result.cfgScale}` : ""}
           </p>
           <video
             className="generated-video"
             src={result.videoUrl}
             controls
             playsInline
+            autoPlay
           />
           <div className="header-actions" style={{ marginTop: "1rem" }}>
             <a
               className="btn btn-secondary"
               href={result.videoUrl}
-              download={result.filename || "nvidia-video.mp4"}
+              download={result.filename || "svd-video.mp4"}
             >
               Descargar MP4
             </a>
           </div>
         </div>
       )}
+
+      <div className="card">
+        <h2>Historial reciente</h2>
+        {history.length === 0 ? (
+          <p className="muted">Todavía no hay generaciones guardadas.</p>
+        ) : (
+          <div className="video-history">
+            {history.map((item) => (
+              <div key={item.filename || item.videoUrl} className="video-history-item">
+                <video src={item.videoUrl} muted playsInline preload="metadata" />
+                <div>
+                  <p className="muted">
+                    {item.createdAt
+                      ? new Date(item.createdAt).toLocaleString()
+                      : "—"}
+                  </p>
+                  <p className="muted">
+                    {item.model || "SVD"}
+                    {item.seed != null ? ` · seed ${item.seed}` : ""}
+                  </p>
+                  <div className="header-actions">
+                    <a className="btn btn-secondary" href={item.videoUrl} target="_blank" rel="noreferrer">
+                      Ver
+                    </a>
+                    <a
+                      className="btn btn-secondary"
+                      href={item.videoUrl}
+                      download={item.filename || "video.mp4"}
+                    >
+                      Descargar
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

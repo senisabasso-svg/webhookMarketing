@@ -79,14 +79,16 @@ router.get("/febros-tracking", (_req, res) => {
 });
 
 router.get("/video-generation", (_req, res) => {
-  res.json({
-    configured: config.isNvidiaConfigured(),
-    model: "stabilityai/stable-video-diffusion",
-    providers: nvidiaCosmos.listProviders(),
-    defaultProvider: "svd",
-    note:
-      "Por defecto usamos Stable Video Diffusion (gratis NVIDIA, image→video). Cosmos 3 Nano aún no tiene API cloud pública.",
-  });
+  res.json(nvidiaCosmos.getMeta());
+});
+
+router.get("/video-generation/history", (_req, res) => {
+  try {
+    const history = nvidiaCosmos.listHistory(20);
+    res.json({ history });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 router.post("/video-generation", (req, res) => {
@@ -98,48 +100,34 @@ router.post("/video-generation", (req, res) => {
     if (!config.isNvidiaConfigured()) {
       return res.status(503).json({
         error:
-          "NVIDIA_API_KEY no configurada. Agregala al .env y reiniciá el servidor.",
+          "NVIDIA_API_KEY no configurada. Agregala en Railway y redeploy.",
       });
     }
 
-    const provider = req.body?.provider || "svd";
-    const prompt = String(req.body?.prompt || "").trim();
-
-    let imageDataUri = null;
-    if (req.file?.buffer) {
-      const maxBytes = 190 * 1024;
-      if (req.file.buffer.length > maxBytes) {
-        return res.status(400).json({
-          error:
-            "La imagen supera ~190KB. Comprimila o usá una más chica (requisito de NVIDIA).",
-        });
-      }
-      imageDataUri = nvidiaCosmos.bufferToDataUri(
-        req.file.buffer,
-        req.file.mimetype || "image/jpeg"
-      );
-    }
-
-    if (provider === "svd" && !imageDataUri) {
+    if (!req.file?.buffer) {
       return res.status(400).json({
-        error: "Stable Video Diffusion requiere una imagen (image → video).",
+        error: "Subí una imagen JPG/PNG (image → video).",
       });
     }
 
-    if (provider === "cosmos3" && !prompt) {
-      return res.status(400).json({ error: "El prompt es requerido para Cosmos" });
+    const maxBytes = 190 * 1024;
+    if (req.file.buffer.length > maxBytes) {
+      return res.status(400).json({
+        error:
+          "La imagen supera ~190KB. Comprimila o usá una más chica (requisito de NVIDIA).",
+      });
     }
+
+    const imageDataUri = nvidiaCosmos.bufferToDataUri(
+      req.file.buffer,
+      req.file.mimetype || "image/jpeg"
+    );
 
     try {
       const result = await nvidiaCosmos.generateVideo({
-        provider,
-        prompt,
         imageDataUri,
         seed: req.body?.seed,
         cfgScale: req.body?.cfgScale || 1.8,
-        resolution: req.body?.resolution || "720_16_9",
-        numOutputFrames: req.body?.numOutputFrames || 120,
-        negativePrompt: req.body?.negativePrompt || "",
       });
 
       res.json({
@@ -148,6 +136,7 @@ router.post("/video-generation", (req, res) => {
         model: result.model,
         provider: result.provider,
         seed: result.seed ?? null,
+        cfgScale: result.cfgScale ?? null,
       });
     } catch (error) {
       console.error(
