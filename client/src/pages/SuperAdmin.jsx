@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 
 const INTEGRATION_LABELS = {
@@ -207,6 +208,9 @@ export default function SuperAdmin({ user, onLogout }) {
           <p className="muted">{user.email}</p>
         </div>
         <div className="header-actions">
+          <Link className="btn btn-secondary" to="/superadmin/generacion-video">
+            GENERACIÓN VIDEO
+          </Link>
           {febrosTracking?.url ? (
             <a
               className="btn btn-secondary"

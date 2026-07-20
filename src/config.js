@@ -69,6 +69,12 @@ module.exports = {
   // facebook = Page token | instagram = Instagram Business Login token
   metaApiHost: process.env.META_API_HOST || "facebook",
 
+  nvidiaApiKey: process.env.NVIDIA_API_KEY || "",
+  nvidiaBaseUrl: (
+    process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com"
+  ).replace(/\/$/, ""),
+  nvidiaVideoModel: process.env.NVIDIA_VIDEO_MODEL || "nvidia/cosmos3-nano",
+
   graphBaseUrl() {
     return this.metaApiHost === "instagram"
       ? "https://graph.instagram.com"
@@ -86,6 +92,9 @@ module.exports = {
       isConfigured(this.whatsappToken) &&
       isConfigured(this.whatsappPhoneNumberId)
     );
+  },
+  isNvidiaConfigured() {
+    return isConfigured(this.nvidiaApiKey);
   },
   messagesEndpointId() {
     if (this.metaApiHost === "instagram") return "me";

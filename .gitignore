@@ -5,6 +5,9 @@ uploads/*
 !uploads/leader/
 uploads/leader/*
 !uploads/leader/.gitkeep
+!uploads/videos/
+uploads/videos/*
+!uploads/videos/.gitkeep
 .env
 *.log
 .DS_Store

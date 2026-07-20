@@ -55,6 +55,36 @@ export const api = {
   },
   deleteLeaderPdf: () =>
     request("/admin/leader-comment/pdf", { method: "DELETE" }),
+  getVideoGenerationMeta: () => request("/admin/video-generation"),
+  generateVideo: async ({
+    prompt,
+    negativePrompt,
+    resolution,
+    numOutputFrames,
+    seed,
+    imageFile,
+  }) => {
+    const form = new FormData();
+    form.append("prompt", prompt);
+    if (negativePrompt) form.append("negativePrompt", negativePrompt);
+    if (resolution) form.append("resolution", resolution);
+    if (numOutputFrames != null) {
+      form.append("numOutputFrames", String(numOutputFrames));
+    }
+    if (seed !== undefined && seed !== null && seed !== "") {
+      form.append("seed", String(seed));
+    }
+    if (imageFile) form.append("image", imageFile);
+
+    const res = await fetch("/api/admin/video-generation", {
+      method: "POST",
+      credentials: "include",
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+    return data;
+  },
   getCompany: () => request("/company/company"),
   getIntegration: (type) => request(`/company/integrations/${type}`),
   updateIntegration: (type, config) =>

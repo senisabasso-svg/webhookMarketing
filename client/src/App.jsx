@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { api } from "./api";
 import Login from "./pages/Login";
 import SuperAdmin from "./pages/SuperAdmin";
+import VideoGeneration from "./pages/VideoGeneration";
 import CompanyDashboard from "./pages/CompanyDashboard";
 import IntegrationEdit from "./pages/IntegrationEdit";
 
@@ -59,6 +60,16 @@ function App() {
         element={
           user?.role === "superadmin" ? (
             <SuperAdmin user={user} onLogout={handleLogout} />
+          ) : (
+            <Navigate to="/login" />
+          )
+        }
+      />
+      <Route
+        path="/superadmin/generacion-video"
+        element={
+          user?.role === "superadmin" ? (
+            <VideoGeneration user={user} onLogout={handleLogout} />
           ) : (
             <Navigate to="/login" />
           )

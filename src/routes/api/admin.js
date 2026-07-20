@@ -5,6 +5,8 @@ const integrationStore = require("../../services/integrationStore");
 const { INTEGRATION_TYPES } = require("../../constants/integrationFields");
 const leaderCommentConfig = require("../../services/leaderCommentConfig");
 const { uploadLeaderPdf } = require("../../middleware/uploadLeaderPdf");
+const { uploadVideoImage } = require("../../middleware/uploadVideoImage");
+const nvidiaCosmos = require("../../services/nvidiaCosmos");
 const { isDatabaseEnabled } = require("../../db/pool");
 
 const router = express.Router();
@@ -73,6 +75,74 @@ router.get("/febros-tracking", (_req, res) => {
   res.json({
     url: config.febrosClientTrackingUrl || null,
     label: "Acceso seguimiento clientes febros",
+  });
+});
+
+router.get("/video-generation", (_req, res) => {
+  res.json({
+    configured: config.isNvidiaConfigured(),
+    model: config.nvidiaVideoModel,
+    baseUrl: config.nvidiaBaseUrl,
+    resolutions: ["720_16_9", "1080_16_9"],
+    maxFrames: 189,
+  });
+});
+
+router.post("/video-generation", (req, res) => {
+  uploadVideoImage.single("image")(req, res, async (uploadError) => {
+    if (uploadError) {
+      return res.status(400).json({ error: uploadError.message });
+    }
+
+    if (!config.isNvidiaConfigured()) {
+      return res.status(503).json({
+        error:
+          "NVIDIA_API_KEY no configurada. Agregala al .env y reiniciá el servidor.",
+      });
+    }
+
+    const prompt = req.body?.prompt;
+    if (!String(prompt || "").trim()) {
+      return res.status(400).json({ error: "El prompt es requerido" });
+    }
+
+    let imageDataUri = null;
+    if (req.file?.buffer) {
+      imageDataUri = nvidiaCosmos.bufferToDataUri(
+        req.file.buffer,
+        req.file.mimetype || "image/jpeg"
+      );
+    }
+
+    try {
+      const result = await nvidiaCosmos.generateVideo({
+        prompt,
+        imageDataUri,
+        resolution: req.body?.resolution || "720_16_9",
+        numOutputFrames: req.body?.numOutputFrames || 120,
+        seed: req.body?.seed,
+        negativePrompt: req.body?.negativePrompt || "",
+      });
+
+      res.json({
+        videoUrl: result.videoUrl,
+        filename: result.filename,
+        resolution: result.resolution,
+        numOutputFrames: result.numOutputFrames,
+        model: result.model,
+      });
+    } catch (error) {
+      console.error(
+        "[nvidia] video generation error:",
+        error.message,
+        error.nvidiaError || ""
+      );
+      const status =
+        error.status && error.status >= 400 && error.status < 600
+          ? error.status
+          : 502;
+      res.status(status).json({ error: error.message });
+    }
   });
 });
 
