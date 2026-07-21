@@ -63,6 +63,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  getCompanyAiChatMeta: () => request("/company/ai-chat"),
+  sendCompanyAiChat: (payload) =>
+    request("/company/ai-chat", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   generateVideo: async ({ seed, cfgScale, imageFile }) => {
     const form = new FormData();
     if (cfgScale != null) form.append("cfgScale", String(cfgScale));

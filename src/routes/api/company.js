@@ -4,10 +4,69 @@ const integrationStore = require("../../services/integrationStore");
 const { getFieldsForType } = require("../../constants/integrationFields");
 const defaultSystemPrompt = require("../../prompts/benjamin");
 const instagramInsights = require("../../services/instagramInsights");
+const companyGrowthContext = require("../../services/companyGrowthContext");
+const nvidiaChat = require("../../services/nvidiaChat");
+const config = require("../../config");
+const { resolveProvider } = require("../../services/ai");
 
 const router = express.Router();
 
 router.use(requireAuth(["company_admin"]));
+
+router.get("/ai-chat", async (req, res) => {
+  res.json({
+    configured: config.isNvidiaConfigured(),
+    provider: resolveProvider(),
+    model: config.nvidiaChatModel,
+    baseUrl: config.nvidiaChatBaseUrl,
+    aiProviderEnv: config.aiProvider,
+    companyId: req.user.company_id,
+    companyName: req.user.company_name || null,
+  });
+});
+
+router.post("/ai-chat", async (req, res) => {
+  const message = String(req.body?.message || "").trim();
+  if (!message) {
+    return res.status(400).json({ error: "Mensaje requerido" });
+  }
+
+  if (!config.isNvidiaConfigured()) {
+    return res.status(503).json({
+      error: "NVIDIA_API_KEY no configurada en Railway / .env",
+    });
+  }
+
+  try {
+    const history = Array.isArray(req.body?.history) ? req.body.history : [];
+    const forceRefresh = Boolean(req.body?.refreshContext);
+    const context = await companyGrowthContext.getGrowthContextSafe(
+      req.user.company_id,
+      { forceRefresh }
+    );
+
+    const result = await nvidiaChat.generateReply(
+      { message, systemPrompt: context.systemPrompt },
+      null,
+      history
+    );
+    res.json({
+      ...result,
+      companyId: context.companyId,
+      companyName: context.companyName,
+      username: context.username,
+      contextFetchedAt: context.fetchedAt,
+      insightsError: context.insightsError,
+    });
+  } catch (error) {
+    console.error("[company-ai-chat] error:", error.message);
+    const status =
+      error.status && error.status >= 400 && error.status < 600
+        ? error.status
+        : 502;
+    res.status(status).json({ error: error.message });
+  }
+});
 
 router.get("/company", async (req, res) => {
   try {

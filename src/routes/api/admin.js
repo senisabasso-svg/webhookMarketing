@@ -10,19 +10,31 @@ const nvidiaCosmos = require("../../services/nvidiaCosmos");
 const nvidiaChat = require("../../services/nvidiaChat");
 const { resolveProvider } = require("../../services/ai");
 const instagramInsights = require("../../services/instagramInsights");
+const companyGrowthContext = require("../../services/companyGrowthContext");
 const { isDatabaseEnabled } = require("../../db/pool");
 
 const router = express.Router();
 
 router.use(requireAuth(["superadmin"]));
 
-router.get("/ai-chat", (_req, res) => {
+router.get("/ai-chat", async (_req, res) => {
+  let companies = [];
+  try {
+    companies = await integrationStore.listCompanies();
+  } catch {
+    companies = [];
+  }
+
   res.json({
     configured: config.isNvidiaConfigured(),
     provider: resolveProvider(),
     model: config.nvidiaChatModel,
     baseUrl: config.nvidiaChatBaseUrl,
     aiProviderEnv: config.aiProvider,
+    companies: [
+      { id: "legacy", name: "Febros (.env)" },
+      ...companies.map((c) => ({ id: c.id, name: c.name })),
+    ],
   });
 });
 
@@ -40,12 +52,26 @@ router.post("/ai-chat", async (req, res) => {
 
   try {
     const history = Array.isArray(req.body?.history) ? req.body.history : [];
+    const companyId = String(req.body?.companyId || "legacy");
+    const forceRefresh = Boolean(req.body?.refreshContext);
+    const context = await companyGrowthContext.getGrowthContextSafe(
+      companyId,
+      { forceRefresh }
+    );
+
     const result = await nvidiaChat.generateReply(
-      { message },
+      { message, systemPrompt: context.systemPrompt },
       null,
       history
     );
-    res.json(result);
+    res.json({
+      ...result,
+      companyId: context.companyId,
+      companyName: context.companyName,
+      username: context.username,
+      contextFetchedAt: context.fetchedAt,
+      insightsError: context.insightsError,
+    });
   } catch (error) {
     console.error("[ai-chat] error:", error.message);
     const status =

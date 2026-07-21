@@ -39,7 +39,7 @@ async function generateWithNvidiaChat({
   const body = {
     model,
     messages,
-    max_tokens: Number(process.env.NVIDIA_CHAT_MAX_TOKENS) || 1024,
+    max_tokens: Number(process.env.NVIDIA_CHAT_MAX_TOKENS) || 4096,
     temperature: Number(process.env.NVIDIA_CHAT_TEMPERATURE) || 0.6,
     top_p: Number(process.env.NVIDIA_CHAT_TOP_P) || 0.95,
     stream: false,
@@ -88,11 +88,15 @@ async function generateWithNvidiaChat({
 
 async function generateReply(input, tenant = null, history = []) {
   const cfg = tenant || globalConfig;
-  const systemPrompt = cfg.geminiSystemPrompt || globalConfig.geminiSystemPrompt;
   const message = String(input.message || "").trim();
   if (!message) {
     throw new Error("Mensaje vacío");
   }
+
+  const systemPrompt =
+    input.systemPrompt ||
+    cfg.geminiSystemPrompt ||
+    globalConfig.geminiSystemPrompt;
 
   return generateWithNvidiaChat({
     systemPrompt,

@@ -81,7 +81,21 @@ function App() {
         path="/superadmin/chat-kimi"
         element={
           user?.role === "superadmin" ? (
-            <KimiChat user={user} onLogout={handleLogout} />
+            <KimiChat
+              user={user}
+              onLogout={handleLogout}
+              mode="superadmin"
+            />
+          ) : (
+            <Navigate to="/login" />
+          )
+        }
+      />
+      <Route
+        path="/admin/chat-growth"
+        element={
+          user?.role === "company_admin" ? (
+            <KimiChat user={user} onLogout={handleLogout} mode="company" />
           ) : (
             <Navigate to="/login" />
           )

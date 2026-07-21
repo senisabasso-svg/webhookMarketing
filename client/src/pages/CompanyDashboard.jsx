@@ -47,9 +47,14 @@ export default function CompanyDashboard({ user, onLogout }) {
         ) : (
           <div className="integration-links">
             {integrations.some((i) => i.type === "instagram") && (
-              <Link className="btn" to="/admin/instagram-insights">
-                Dashboard Instagram
-              </Link>
+              <>
+                <Link className="btn" to="/admin/instagram-insights">
+                  Dashboard Instagram
+                </Link>
+                <Link className="btn" to="/admin/chat-growth">
+                  Chat plan de crecimiento
+                </Link>
+              </>
             )}
             {integrations.map((i) => (
               <Link
