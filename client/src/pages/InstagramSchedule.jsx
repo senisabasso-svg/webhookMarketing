@@ -111,7 +111,13 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
     setCaption(post.caption || "");
     setScheduledAt(toLocalInputValue(post.scheduledAt));
     setFiles([]);
-    setExistingMediaUrls(post.mediaUrls || (post.mediaUrl ? [post.mediaUrl] : []));
+    // previewUrls = /files/scheduled/... (mismo origen del panel)
+    const urls =
+      (post.previewUrls && post.previewUrls.length && post.previewUrls) ||
+      (post.previewUrl ? [post.previewUrl] : []) ||
+      (post.mediaUrls && post.mediaUrls.length && post.mediaUrls) ||
+      (post.mediaUrl ? [post.mediaUrl] : []);
+    setExistingMediaUrls(urls);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -392,6 +398,23 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
                       {statusLabel(p.status)}
                     </span>
                   </div>
+                  {(p.previewUrls?.length > 0 || p.previewUrl) &&
+                    p.mediaType !== "REELS" && (
+                      <div className="schedule-preview-grid schedule-preview-grid--mini">
+                        {(p.previewUrls || [p.previewUrl]).map((src) => (
+                          <img key={src} src={src} alt="" />
+                        ))}
+                      </div>
+                    )}
+                  {p.mediaType === "REELS" && (p.previewUrl || p.previewUrls?.[0]) && (
+                    <video
+                      src={p.previewUrl || p.previewUrls[0]}
+                      className="schedule-preview schedule-preview--mini"
+                      muted
+                      playsInline
+                      preload="metadata"
+                    />
+                  )}
                   <p className="schedule-item__caption">
                     {(p.caption || "(sin caption)").slice(0, 120)}
                   </p>

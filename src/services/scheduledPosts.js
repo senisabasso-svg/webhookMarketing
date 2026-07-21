@@ -25,9 +25,19 @@ function publicMediaUrl(filename) {
   return `${base}/files/scheduled/${encodeURIComponent(filename)}`;
 }
 
+/** URL relativa para el panel (mismo origen; no depende de PUBLIC_BASE_URL). */
+function previewMediaUrl(filename) {
+  return `/files/scheduled/${encodeURIComponent(filename)}`;
+}
+
 function resolveFilenames(row) {
   if (Array.isArray(row.filenames) && row.filenames.length) {
     return row.filenames.map(String);
+  }
+  if (row.filenames && typeof row.filenames === "object") {
+    // pg a veces devuelve objetos indexados
+    const values = Object.values(row.filenames).map(String).filter(Boolean);
+    if (values.length) return values;
   }
   if (typeof row.filenames === "string") {
     try {
@@ -37,7 +47,7 @@ function resolveFilenames(row) {
       /* ignore */
     }
   }
-  return row.filename ? [row.filename] : [];
+  return row.filename ? [String(row.filename)] : [];
 }
 
 function mapRow(row) {
@@ -55,6 +65,8 @@ function mapRow(row) {
     mimeType: row.mime_type,
     mediaUrl: filenames[0] ? publicMediaUrl(filenames[0]) : null,
     mediaUrls: filenames.map(publicMediaUrl),
+    previewUrl: filenames[0] ? previewMediaUrl(filenames[0]) : null,
+    previewUrls: filenames.map(previewMediaUrl),
     scheduledAt: row.scheduled_at,
     status: row.status,
     metaContainerId: row.meta_container_id,

@@ -905,6 +905,16 @@ input[type="file"] {
   background: #0b1220;
 }
 
+.schedule-preview-grid--mini {
+  margin: 0.5rem 0;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+}
+
+.schedule-preview--mini {
+  max-height: 100px;
+  margin: 0.5rem 0;
+}
+
 .schedule-list {
   display: flex;
   flex-direction: column;
