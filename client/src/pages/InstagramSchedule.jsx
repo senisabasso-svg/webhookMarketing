@@ -246,9 +246,10 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
 
       <div className="dash-panel" style={{ marginBottom: "1rem" }}>
         <p className="muted card-hint">
-          En <strong>Imagen / Carrusel</strong> podés elegir 1–10 fotos. Los
-          posts <strong>pendientes</strong> o <strong>fallidos</strong> se
-          pueden editar (caption, fecha/hora y media opcional).
+          En <strong>Imagen / Carrusel</strong> podés elegir 1–10 fotos. Las
+          imágenes se guardan en la base hasta publicarse. Posts{" "}
+          <strong>pendientes</strong>/<strong>fallidos</strong>: editar o
+          eliminar.
         </p>
         {publicBaseUrl && (
           <p className="muted card-hint">
@@ -443,16 +444,22 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
                       >
                         Editar
                       </button>
-                      {p.status === "pending" && (
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={() => handleCancel(p.id)}
-                          disabled={saving}
-                        >
-                          Cancelar
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              "¿Eliminar este post programado? Se borran también las fotos guardadas."
+                            )
+                          ) {
+                            handleCancel(p.id);
+                          }
+                        }}
+                        disabled={saving}
+                      >
+                        Eliminar
+                      </button>
                     </div>
                   )}
                 </div>

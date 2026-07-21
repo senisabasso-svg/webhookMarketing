@@ -1,13 +1,10 @@
-const path = require("path");
-const fs = require("fs");
 const { getPool, isDatabaseEnabled } = require("../db/pool");
 const config = require("../config");
 const { publishScheduledMedia } = require("./instagramPublish");
 const {
-  getUploadDir,
-  ensureUploadDir,
   IMAGE_MIMES,
   VIDEO_MIMES,
+  makeStoredFilename,
 } = require("../middleware/uploadScheduledMedia");
 
 const MAX_CAROUSEL = 10;
@@ -20,53 +17,53 @@ function requireDb() {
   }
 }
 
-function publicMediaUrl(filename) {
+function tokenPublicUrl(token) {
   const base = config.publicBaseUrl.replace(/\/$/, "");
-  return `${base}/files/scheduled/${encodeURIComponent(filename)}`;
+  return `${base}/files/scheduled-media/${token}`;
 }
 
-/** URL relativa para el panel (mismo origen; no depende de PUBLIC_BASE_URL). */
-function previewMediaUrl(filename) {
-  return `/files/scheduled/${encodeURIComponent(filename)}`;
+function tokenPreviewUrl(token) {
+  return `/files/scheduled-media/${token}`;
 }
 
-function resolveFilenames(row) {
-  if (Array.isArray(row.filenames) && row.filenames.length) {
-    return row.filenames.map(String);
-  }
-  if (row.filenames && typeof row.filenames === "object") {
-    // pg a veces devuelve objetos indexados
-    const values = Object.values(row.filenames).map(String).filter(Boolean);
-    if (values.length) return values;
-  }
-  if (typeof row.filenames === "string") {
+function parseMediaItems(row) {
+  const raw = row.media_items;
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string") {
     try {
-      const parsed = JSON.parse(row.filenames);
-      if (Array.isArray(parsed) && parsed.length) return parsed.map(String);
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
-      /* ignore */
+      return [];
     }
   }
-  return row.filename ? [String(row.filename)] : [];
+  return [];
 }
 
 function mapRow(row) {
   if (!row) return null;
-  const filenames = resolveFilenames(row);
+  const items = parseMediaItems(row).sort(
+    (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
+  );
+  const tokens = items.map((i) => i.token).filter(Boolean);
+  const filenames = items.map((i) => i.filename).filter(Boolean);
+
   return {
     id: row.id,
     companyId: row.company_id,
     mediaType: row.media_type,
     caption: row.caption,
     filename: filenames[0] || row.filename,
-    filenames,
-    mediaCount: filenames.length,
+    filenames: filenames.length ? filenames : null,
+    mediaCount: tokens.length || 1,
     originalName: row.original_name,
-    mimeType: row.mime_type,
-    mediaUrl: filenames[0] ? publicMediaUrl(filenames[0]) : null,
-    mediaUrls: filenames.map(publicMediaUrl),
-    previewUrl: filenames[0] ? previewMediaUrl(filenames[0]) : null,
-    previewUrls: filenames.map(previewMediaUrl),
+    mimeType: items[0]?.mimeType || row.mime_type,
+    mediaUrl: tokens[0] ? tokenPublicUrl(tokens[0]) : null,
+    mediaUrls: tokens.map(tokenPublicUrl),
+    previewUrl: tokens[0] ? tokenPreviewUrl(tokens[0]) : null,
+    previewUrls: tokens.map(tokenPreviewUrl),
+    mediaTokens: tokens,
     scheduledAt: row.scheduled_at,
     status: row.status,
     metaContainerId: row.meta_container_id,
@@ -79,6 +76,25 @@ function mapRow(row) {
     publishedAt: row.published_at,
   };
 }
+
+const MEDIA_SELECT = `
+  COALESCE(
+    (
+      SELECT json_agg(
+        json_build_object(
+          'token', m.public_token,
+          'mimeType', m.mime_type,
+          'filename', m.filename,
+          'sortOrder', m.sort_order
+        )
+        ORDER BY m.sort_order ASC
+      )
+      FROM scheduled_post_media m
+      WHERE m.post_id = p.id
+    ),
+    '[]'::json
+  ) AS media_items
+`;
 
 function validateFiles({ mediaType, files, scheduledAt }) {
   const requested = String(mediaType || "IMAGE").toUpperCase();
@@ -137,7 +153,7 @@ function validateFiles({ mediaType, files, scheduledAt }) {
         { status: 400 }
       );
     }
-    if (file.size > 8 * 1024 * 1024) {
+    if ((file.size || file.buffer?.length || 0) > 8 * 1024 * 1024) {
       throw Object.assign(new Error("Cada imagen no puede superar 8MB"), {
         status: 400,
       });
@@ -148,24 +164,28 @@ function validateFiles({ mediaType, files, scheduledAt }) {
   return { type, when, files };
 }
 
-function unlinkFiles(files) {
-  for (const file of files || []) {
-    try {
-      if (file?.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
-    } catch {
-      /* ignore */
-    }
-  }
+function fileBuffer(file) {
+  if (file?.buffer) return file.buffer;
+  throw Object.assign(new Error("Archivo sin datos en memoria"), { status: 400 });
 }
 
-function unlinkFilenames(filenames) {
-  for (const name of filenames || []) {
-    try {
-      const filePath = path.join(getUploadDir(), name);
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    } catch {
-      /* ignore */
-    }
+async function insertMediaRows(client, postId, files) {
+  for (let i = 0; i < files.length; i += 1) {
+    const file = files[i];
+    const filename = makeStoredFilename(file, i);
+    await client.query(
+      `INSERT INTO scheduled_post_media
+         (post_id, sort_order, filename, original_name, mime_type, data)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        postId,
+        i,
+        filename,
+        file.originalname || null,
+        file.mimetype || null,
+        fileBuffer(file),
+      ]
+    );
   }
 }
 
@@ -173,13 +193,29 @@ async function listPosts(companyId, { limit = 50 } = {}) {
   requireDb();
   const pool = getPool();
   const { rows } = await pool.query(
-    `SELECT * FROM scheduled_posts
-     WHERE company_id = $1
-     ORDER BY scheduled_at DESC
+    `SELECT p.*, ${MEDIA_SELECT}
+     FROM scheduled_posts p
+     WHERE p.company_id = $1
+     ORDER BY p.scheduled_at DESC
      LIMIT $2`,
     [String(companyId), Math.min(100, Number(limit) || 50)]
   );
   return rows.map(mapRow);
+}
+
+async function getPost(companyId, postId) {
+  requireDb();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT p.*, ${MEDIA_SELECT}
+     FROM scheduled_posts p
+     WHERE p.id = $1 AND p.company_id = $2`,
+    [postId, String(companyId)]
+  );
+  if (!rows[0]) {
+    throw Object.assign(new Error("Post no encontrado"), { status: 404 });
+  }
+  return mapRow(rows[0]);
 }
 
 async function createPost({
@@ -204,74 +240,71 @@ async function createPost({
     scheduledAt,
   });
 
-  const filenames = validFiles.map((f) => f.filename);
   const first = validFiles[0];
+  const filenames = validFiles.map((f, i) => makeStoredFilename(f, i));
   const originalNames = validFiles
     .map((f) => f.originalname)
     .filter(Boolean)
     .join(" | ");
 
   const pool = getPool();
-  const { rows } = await pool.query(
-    `INSERT INTO scheduled_posts
-       (company_id, media_type, caption, filename, filenames, original_name, mime_type,
-        scheduled_at, status, created_by)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, 'pending', $9)
-     RETURNING *`,
-    [
-      String(companyId),
-      type,
-      String(caption || "").slice(0, 2200),
-      filenames[0],
-      JSON.stringify(filenames),
-      originalNames || null,
-      first.mimetype || null,
-      when.toISOString(),
-      createdBy || null,
-    ]
-  );
-  return mapRow(rows[0]);
-}
-
-async function getPost(companyId, postId) {
-  requireDb();
-  const pool = getPool();
-  const { rows } = await pool.query(
-    `SELECT * FROM scheduled_posts WHERE id = $1 AND company_id = $2`,
-    [postId, String(companyId)]
-  );
-  if (!rows[0]) {
-    throw Object.assign(new Error("Post no encontrado"), { status: 404 });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      `INSERT INTO scheduled_posts
+         (company_id, media_type, caption, filename, filenames, original_name, mime_type,
+          scheduled_at, status, created_by)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, 'pending', $9)
+       RETURNING *`,
+      [
+        String(companyId),
+        type,
+        String(caption || "").slice(0, 2200),
+        filenames[0],
+        JSON.stringify(filenames),
+        originalNames || null,
+        first.mimetype || null,
+        when.toISOString(),
+        createdBy || null,
+      ]
+    );
+    await insertMediaRows(client, rows[0].id, validFiles);
+    await client.query("COMMIT");
+    return getPost(companyId, rows[0].id);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
-  return mapRow(rows[0]);
 }
 
-async function cancelPost(companyId, postId) {
+/** Elimina post pendiente/fallido y su media en DB. */
+async function deletePost(companyId, postId) {
   requireDb();
   const pool = getPool();
   const { rows } = await pool.query(
-    `UPDATE scheduled_posts
-     SET status = 'cancelled', updated_at = NOW()
-     WHERE id = $1 AND company_id = $2 AND status = 'pending'
-     RETURNING *`,
+    `DELETE FROM scheduled_posts
+     WHERE id = $1 AND company_id = $2
+       AND status IN ('pending', 'failed')
+     RETURNING id`,
     [postId, String(companyId)]
   );
   if (!rows[0]) {
     throw Object.assign(
-      new Error("Post no encontrado o ya no se puede cancelar"),
+      new Error("Post no encontrado o ya no se puede eliminar (solo pending/failed)"),
       { status: 404 }
     );
   }
-
-  unlinkFilenames(resolveFilenames(rows[0]));
-  return mapRow(rows[0]);
+  return { deleted: true, id: rows[0].id };
 }
 
-/**
- * Edita un post pending o failed.
- * Si vienen files nuevos, reemplazan el media anterior.
- * Al guardar, status vuelve a pending.
- */
+// alias histórico
+async function cancelPost(companyId, postId) {
+  return deletePost(companyId, postId);
+}
+
 async function updatePost(companyId, postId, {
   caption,
   scheduledAt,
@@ -280,120 +313,120 @@ async function updatePost(companyId, postId, {
 } = {}) {
   requireDb();
   const pool = getPool();
-  const { rows: existingRows } = await pool.query(
-    `SELECT * FROM scheduled_posts
-     WHERE id = $1 AND company_id = $2
-       AND status IN ('pending', 'failed')`,
-    [postId, String(companyId)]
-  );
-  const existing = existingRows[0];
-  if (!existing) {
-    throw Object.assign(
-      new Error("Post no encontrado o ya no se puede editar (solo pending/failed)"),
-      { status: 404 }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows: existingRows } = await client.query(
+      `SELECT * FROM scheduled_posts
+       WHERE id = $1 AND company_id = $2
+         AND status IN ('pending', 'failed')
+       FOR UPDATE`,
+      [postId, String(companyId)]
     );
-  }
-
-  const nextCaption =
-    caption !== undefined
-      ? String(caption || "").slice(0, 2200)
-      : existing.caption;
-
-  let nextWhen = existing.scheduled_at;
-  if (scheduledAt !== undefined && scheduledAt !== null && scheduledAt !== "") {
-    const when = new Date(scheduledAt);
-    if (Number.isNaN(when.getTime())) {
-      throw Object.assign(new Error("scheduledAt inválido"), { status: 400 });
+    const existing = existingRows[0];
+    if (!existing) {
+      throw Object.assign(
+        new Error("Post no encontrado o ya no se puede editar (solo pending/failed)"),
+        { status: 404 }
+      );
     }
-    if (when.getTime() < Date.now() - 60 * 1000) {
-      throw Object.assign(new Error("La fecha/hora debe ser en el futuro"), {
-        status: 400,
+
+    const nextCaption =
+      caption !== undefined
+        ? String(caption || "").slice(0, 2200)
+        : existing.caption;
+
+    let nextWhen = existing.scheduled_at;
+    if (scheduledAt !== undefined && scheduledAt !== null && scheduledAt !== "") {
+      const when = new Date(scheduledAt);
+      if (Number.isNaN(when.getTime())) {
+        throw Object.assign(new Error("scheduledAt inválido"), { status: 400 });
+      }
+      if (when.getTime() < Date.now() - 60 * 1000) {
+        throw Object.assign(new Error("La fecha/hora debe ser en el futuro"), {
+          status: 400,
+        });
+      }
+      nextWhen = when.toISOString();
+    }
+
+    let nextType = existing.media_type;
+    let nextFilename = existing.filename;
+    let nextFilenamesJson = existing.filenames;
+    let nextOriginal = existing.original_name;
+    let nextMime = existing.mime_type;
+
+    const list = Array.isArray(files) ? files.filter(Boolean) : [];
+    if (list.length) {
+      const { type, files: validFiles } = validateFiles({
+        mediaType:
+          mediaType ||
+          (list[0].mimetype?.startsWith("video/") ? "REELS" : "IMAGE"),
+        files: list,
+        scheduledAt: nextWhen,
       });
-    }
-    nextWhen = when.toISOString();
-  }
+      nextType = type;
+      const names = validFiles.map((f, i) => makeStoredFilename(f, i));
+      nextFilename = names[0];
+      nextFilenamesJson = names;
+      nextOriginal = validFiles
+        .map((f) => f.originalname)
+        .filter(Boolean)
+        .join(" | ");
+      nextMime = validFiles[0].mimetype || null;
 
-  let nextType = existing.media_type;
-  let nextFilename = existing.filename;
-  let nextFilenames = resolveFilenames(existing);
-  let nextOriginal = existing.original_name;
-  let nextMime = existing.mime_type;
-  let oldFilenamesToDelete = null;
-
-  const list = Array.isArray(files) ? files.filter(Boolean) : [];
-  if (list.length) {
-    const { type, files: validFiles } = validateFiles({
-      mediaType: mediaType || (list[0].mimetype?.startsWith("video/") ? "REELS" : "IMAGE"),
-      files: list,
-      scheduledAt: nextWhen,
-    });
-    oldFilenamesToDelete = nextFilenames;
-    nextType = type;
-    nextFilenames = validFiles.map((f) => f.filename);
-    nextFilename = nextFilenames[0];
-    nextOriginal = validFiles
-      .map((f) => f.originalname)
-      .filter(Boolean)
-      .join(" | ");
-    nextMime = validFiles[0].mimetype || null;
-  } else if (mediaType) {
-    const requested = String(mediaType).toUpperCase();
-    if (requested === "REELS" && nextType !== "REELS") {
-      throw Object.assign(
-        new Error("Para pasar a Reel subí un video nuevo"),
-        { status: 400 }
+      await client.query(`DELETE FROM scheduled_post_media WHERE post_id = $1`, [
+        postId,
+      ]);
+      await insertMediaRows(client, postId, validFiles);
+    } else {
+      const { rows: mediaCount } = await client.query(
+        `SELECT COUNT(*)::int AS c FROM scheduled_post_media WHERE post_id = $1`,
+        [postId]
       );
+      if (!mediaCount[0]?.c) {
+        throw Object.assign(
+          new Error(
+            "Este post no tiene media en la base. Subí las fotos/video de nuevo al editar."
+          ),
+          { status: 400 }
+        );
+      }
     }
-    if (
-      (requested === "IMAGE" || requested === "CAROUSEL") &&
-      nextType === "REELS"
-    ) {
-      throw Object.assign(
-        new Error("Para pasar a imagen/carrusel subí fotos nuevas"),
-        { status: 400 }
-      );
-    }
+
+    await client.query(
+      `UPDATE scheduled_posts
+       SET caption = $3,
+           scheduled_at = $4,
+           media_type = $5,
+           filename = $6,
+           filenames = COALESCE($7::jsonb, filenames),
+           original_name = $8,
+           mime_type = $9,
+           status = 'pending',
+           error_message = NULL,
+           updated_at = NOW()
+       WHERE id = $1 AND company_id = $2`,
+      [
+        postId,
+        String(companyId),
+        nextCaption,
+        nextWhen,
+        nextType,
+        nextFilename,
+        list.length ? JSON.stringify(nextFilenamesJson) : null,
+        nextOriginal,
+        nextMime,
+      ]
+    );
+    await client.query("COMMIT");
+    return getPost(companyId, postId);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
-
-  const { rows } = await pool.query(
-    `UPDATE scheduled_posts
-     SET caption = $3,
-         scheduled_at = $4,
-         media_type = $5,
-         filename = $6,
-         filenames = $7::jsonb,
-         original_name = $8,
-         mime_type = $9,
-         status = 'pending',
-         error_message = NULL,
-         updated_at = NOW()
-     WHERE id = $1 AND company_id = $2
-       AND status IN ('pending', 'failed')
-     RETURNING *`,
-    [
-      postId,
-      String(companyId),
-      nextCaption,
-      nextWhen,
-      nextType,
-      nextFilename,
-      JSON.stringify(nextFilenames),
-      nextOriginal,
-      nextMime,
-    ]
-  );
-
-  if (!rows[0]) {
-    throw Object.assign(new Error("No se pudo actualizar el post"), {
-      status: 409,
-    });
-  }
-
-  if (oldFilenamesToDelete?.length) {
-    unlinkFilenames(oldFilenamesToDelete);
-  }
-
-  return mapRow(rows[0]);
 }
 
 async function claimDuePosts(limit = 3) {
@@ -419,11 +452,16 @@ async function claimDuePosts(limit = 3) {
       `UPDATE scheduled_posts
        SET status = 'processing', updated_at = NOW(), error_message = NULL
        WHERE id = ANY($1::uuid[])
-       RETURNING *`,
+       RETURNING id, company_id`,
       [ids]
     );
     await client.query("COMMIT");
-    return claimed.map(mapRow);
+
+    const out = [];
+    for (const row of claimed) {
+      out.push(await getPost(row.company_id, row.id));
+    }
+    return out;
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -434,20 +472,34 @@ async function claimDuePosts(limit = 3) {
 
 async function markPublished(postId, { containerId, mediaId, permalink }) {
   const pool = getPool();
-  const { rows } = await pool.query(
-    `UPDATE scheduled_posts
-     SET status = 'published',
-         meta_container_id = $2,
-         meta_media_id = $3,
-         permalink = $4,
-         published_at = NOW(),
-         updated_at = NOW(),
-         error_message = NULL
-     WHERE id = $1
-     RETURNING *`,
-    [postId, containerId || null, mediaId || null, permalink || null]
-  );
-  return mapRow(rows[0]);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      `UPDATE scheduled_posts
+       SET status = 'published',
+           meta_container_id = $2,
+           meta_media_id = $3,
+           permalink = $4,
+           published_at = NOW(),
+           updated_at = NOW(),
+           error_message = NULL
+       WHERE id = $1
+       RETURNING *`,
+      [postId, containerId || null, mediaId || null, permalink || null]
+    );
+    // Liberar espacio: media ya no hace falta tras publicar
+    await client.query(`DELETE FROM scheduled_post_media WHERE post_id = $1`, [
+      postId,
+    ]);
+    await client.query("COMMIT");
+    return mapRow({ ...rows[0], media_items: [] });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function markFailed(postId, errorMessage) {
@@ -458,20 +510,20 @@ async function markFailed(postId, errorMessage) {
          error_message = $2,
          updated_at = NOW()
      WHERE id = $1
-     RETURNING *`,
+     RETURNING id, company_id`,
     [postId, String(errorMessage || "Error desconocido").slice(0, 2000)]
   );
-  return mapRow(rows[0]);
+  if (!rows[0]) return null;
+  return getPost(rows[0].company_id, rows[0].id);
 }
 
 async function processPost(post) {
-  const filenames =
-    Array.isArray(post.filenames) && post.filenames.length
-      ? post.filenames
-      : post.filename
-        ? [post.filename]
-        : [];
-  const mediaUrls = filenames.map(publicMediaUrl);
+  const mediaUrls = post.mediaUrls || [];
+  if (!mediaUrls.length) {
+    throw new Error(
+      "No hay media en base de datos para este post. Editá y volvé a subir las fotos."
+    );
+  }
   const result = await publishScheduledMedia({
     companyId: post.companyId,
     mediaType: post.mediaType,
@@ -485,19 +537,43 @@ async function processPost(post) {
   });
 }
 
+async function getMediaByToken(token) {
+  requireDb();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT mime_type, filename, original_name, data
+     FROM scheduled_post_media
+     WHERE public_token = $1`,
+    [String(token)]
+  );
+  if (!rows[0]) {
+    throw Object.assign(new Error("Media no encontrada"), { status: 404 });
+  }
+  return {
+    mimeType: rows[0].mime_type || "application/octet-stream",
+    filename: rows[0].filename || rows[0].original_name || "media",
+    data: rows[0].data,
+  };
+}
+
+function unlinkFiles() {
+  // memoryStorage: nada que borrar en disco
+}
+
 module.exports = {
-  ensureUploadDir,
-  getUploadDir,
-  publicMediaUrl,
+  ensureUploadDir: () => {},
+  getUploadDir: () => null,
   listPosts,
   getPost,
   createPost,
   updatePost,
+  deletePost,
   cancelPost,
   claimDuePosts,
   processPost,
   markFailed,
   markPublished,
+  getMediaByToken,
   unlinkFiles,
   MAX_CAROUSEL,
 };

@@ -89,6 +89,24 @@ CREATE TABLE IF NOT EXISTS scheduled_posts (
 
 CREATE INDEX IF NOT EXISTS idx_scheduled_posts_due
   ON scheduled_posts(status, scheduled_at);
+
+CREATE TABLE IF NOT EXISTS scheduled_post_media (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id UUID NOT NULL REFERENCES scheduled_posts(id) ON DELETE CASCADE,
+  sort_order INT NOT NULL DEFAULT 0,
+  public_token UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+  filename VARCHAR(512),
+  original_name VARCHAR(255),
+  mime_type VARCHAR(128),
+  data BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_scheduled_post_media_post
+  ON scheduled_post_media(post_id, sort_order);
+
+CREATE INDEX IF NOT EXISTS idx_scheduled_post_media_token
+  ON scheduled_post_media(public_token);
 `;
 
 const SCHEMA_PATCHES = `
@@ -109,6 +127,24 @@ END $$;
 ALTER TABLE scheduled_posts
   ADD CONSTRAINT scheduled_posts_media_type_check
   CHECK (media_type IN ('IMAGE', 'REELS', 'CAROUSEL'));
+
+CREATE TABLE IF NOT EXISTS scheduled_post_media (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id UUID NOT NULL REFERENCES scheduled_posts(id) ON DELETE CASCADE,
+  sort_order INT NOT NULL DEFAULT 0,
+  public_token UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+  filename VARCHAR(512),
+  original_name VARCHAR(255),
+  mime_type VARCHAR(128),
+  data BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_scheduled_post_media_post
+  ON scheduled_post_media(post_id, sort_order);
+
+CREATE INDEX IF NOT EXISTS idx_scheduled_post_media_token
+  ON scheduled_post_media(public_token);
 `;
 
 async function seedSuperAdmin(client) {

@@ -218,11 +218,11 @@ router.delete(
   "/companies/:companyId/instagram/scheduled-posts/:id",
   async (req, res) => {
     try {
-      const post = await scheduledPosts.cancelPost(
+      const result = await scheduledPosts.deletePost(
         req.params.companyId,
         req.params.id
       );
-      res.json({ post });
+      res.json(result);
     } catch (error) {
       const status = error.status && error.status >= 400 ? error.status : 500;
       res.status(status).json({ error: error.message });
@@ -264,8 +264,8 @@ router.put(
 
 router.delete("/instagram/scheduled-posts/legacy/:id", async (req, res) => {
   try {
-    const post = await scheduledPosts.cancelPost("legacy", req.params.id);
-    res.json({ post });
+    const result = await scheduledPosts.deletePost("legacy", req.params.id);
+    res.json(result);
   } catch (error) {
     const status = error.status && error.status >= 400 ? error.status : 500;
     res.status(status).json({ error: error.message });

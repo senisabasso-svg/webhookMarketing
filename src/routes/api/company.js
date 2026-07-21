@@ -167,11 +167,11 @@ router.put(
 
 router.delete("/instagram/scheduled-posts/:id", async (req, res) => {
   try {
-    const post = await scheduledPosts.cancelPost(
+    const result = await scheduledPosts.deletePost(
       req.user.company_id,
       req.params.id
     );
-    res.json({ post });
+    res.json(result);
   } catch (error) {
     const status = error.status && error.status >= 400 ? error.status : 500;
     res.status(status).json({ error: error.message });

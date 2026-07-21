@@ -56,17 +56,22 @@ app.use(
     },
   })
 );
-app.use(
-  "/files/scheduled",
-  express.static(scheduledPosts.getUploadDir(), {
-    setHeaders(res, filePath) {
-      if (/\.(mp4|mov|webm)$/i.test(filePath)) {
-        res.setHeader("Content-Type", "video/mp4");
-      }
-      res.setHeader("Cache-Control", "public, max-age=300");
-    },
-  })
-);
+// Media de posts programados (BYTEA en Postgres). Público por token — Meta lo descarga.
+app.get("/files/scheduled-media/:token", async (req, res) => {
+  try {
+    const media = await scheduledPosts.getMediaByToken(req.params.token);
+    res.setHeader("Content-Type", media.mimeType);
+    res.setHeader("Cache-Control", "public, max-age=300");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${String(media.filename).replace(/"/g, "")}"`
+    );
+    res.send(media.data);
+  } catch (error) {
+    const status = error.status && error.status >= 400 ? error.status : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
 
 app.get("/health", (_req, res) => {
   res.json({
