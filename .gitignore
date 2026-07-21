@@ -8,6 +8,9 @@ uploads/leader/*
 !uploads/videos/
 uploads/videos/*
 !uploads/videos/.gitkeep
+!uploads/scheduled/
+uploads/scheduled/*
+!uploads/scheduled/.gitkeep
 .env
 *.log
 .DS_Store
