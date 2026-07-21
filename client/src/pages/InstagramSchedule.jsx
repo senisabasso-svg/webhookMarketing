@@ -111,12 +111,12 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
     setCaption(post.caption || "");
     setScheduledAt(toLocalInputValue(post.scheduledAt));
     setFiles([]);
-    // previewUrls = /files/scheduled/... (mismo origen del panel)
-    const urls =
-      (post.previewUrls && post.previewUrls.length && post.previewUrls) ||
-      (post.previewUrl ? [post.previewUrl] : []) ||
-      (post.mediaUrls && post.mediaUrls.length && post.mediaUrls) ||
-      (post.mediaUrl ? [post.mediaUrl] : []);
+    // Preferir /files/scheduled/... (mismo origen del panel)
+    let urls = [];
+    if (post.previewUrls?.length) urls = post.previewUrls;
+    else if (post.previewUrl) urls = [post.previewUrl];
+    else if (post.mediaUrls?.length) urls = post.mediaUrls;
+    else if (post.mediaUrl) urls = [post.mediaUrl];
     setExistingMediaUrls(urls);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
