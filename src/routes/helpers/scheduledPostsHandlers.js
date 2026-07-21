@@ -39,4 +39,31 @@ function handleCreateScheduledPost(companyId, createdBy) {
   };
 }
 
-module.exports = { handleCreateScheduledPost };
+function handleUpdateScheduledPost(companyId) {
+  return async (req, res) => {
+    const files = Array.isArray(req.files)
+      ? req.files
+      : req.file
+        ? [req.file]
+        : [];
+
+    try {
+      const post = await scheduledPosts.updatePost(companyId, req.params.id, {
+        caption: req.body?.caption,
+        scheduledAt: req.body?.scheduledAt,
+        mediaType: req.body?.mediaType,
+        files,
+      });
+      res.json({
+        post,
+        publicBaseUrl: config.publicBaseUrl,
+      });
+    } catch (error) {
+      scheduledPosts.unlinkFiles(files);
+      const status = error.status && error.status >= 400 ? error.status : 500;
+      res.status(status).json({ error: error.message });
+    }
+  };
+}
+
+module.exports = { handleCreateScheduledPost, handleUpdateScheduledPost };

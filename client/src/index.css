@@ -920,6 +920,10 @@ input[type="file"] {
   background: var(--surface2);
 }
 
+.schedule-item.is-editing {
+  border-color: var(--accent);
+}
+
 .schedule-item__top {
   display: flex;
   justify-content: space-between;

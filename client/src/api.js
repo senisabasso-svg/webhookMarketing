@@ -19,11 +19,15 @@ async function request(path, options = {}) {
   return data;
 }
 
-async function postScheduledForm(path, { mediaType, caption, scheduledAt, mediaFile, mediaFiles }) {
+async function postScheduledForm(
+  path,
+  { mediaType, caption, scheduledAt, mediaFile, mediaFiles },
+  method = "POST"
+) {
   const form = new FormData();
-  form.append("mediaType", mediaType);
-  form.append("caption", caption || "");
-  form.append("scheduledAt", scheduledAt);
+  if (mediaType != null) form.append("mediaType", mediaType);
+  if (caption !== undefined) form.append("caption", caption || "");
+  if (scheduledAt != null) form.append("scheduledAt", scheduledAt);
   const files = Array.isArray(mediaFiles) && mediaFiles.length
     ? mediaFiles
     : mediaFile
@@ -33,7 +37,7 @@ async function postScheduledForm(path, { mediaType, caption, scheduledAt, mediaF
     form.append("media", file);
   }
   const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
+    method,
     credentials: "include",
     body: form,
   });
@@ -144,6 +148,20 @@ export const api = {
     ),
   createLegacyScheduledPost: (payload) =>
     postScheduledForm("/admin/instagram/scheduled-posts/legacy", payload),
+  updateCompanyScheduledPost: (id, payload) =>
+    postScheduledForm(`/company/instagram/scheduled-posts/${id}`, payload, "PUT"),
+  updateAdminScheduledPost: (companyId, id, payload) =>
+    postScheduledForm(
+      `/admin/companies/${companyId}/instagram/scheduled-posts/${id}`,
+      payload,
+      "PUT"
+    ),
+  updateLegacyScheduledPost: (id, payload) =>
+    postScheduledForm(
+      `/admin/instagram/scheduled-posts/legacy/${id}`,
+      payload,
+      "PUT"
+    ),
   cancelCompanyScheduledPost: (id) =>
     request(`/company/instagram/scheduled-posts/${id}`, { method: "DELETE" }),
   cancelAdminScheduledPost: (companyId, id) =>

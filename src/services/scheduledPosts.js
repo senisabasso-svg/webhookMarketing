@@ -221,6 +221,19 @@ async function createPost({
   return mapRow(rows[0]);
 }
 
+async function getPost(companyId, postId) {
+  requireDb();
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT * FROM scheduled_posts WHERE id = $1 AND company_id = $2`,
+    [postId, String(companyId)]
+  );
+  if (!rows[0]) {
+    throw Object.assign(new Error("Post no encontrado"), { status: 404 });
+  }
+  return mapRow(rows[0]);
+}
+
 async function cancelPost(companyId, postId) {
   requireDb();
   const pool = getPool();
@@ -239,6 +252,135 @@ async function cancelPost(companyId, postId) {
   }
 
   unlinkFilenames(resolveFilenames(rows[0]));
+  return mapRow(rows[0]);
+}
+
+/**
+ * Edita un post pending o failed.
+ * Si vienen files nuevos, reemplazan el media anterior.
+ * Al guardar, status vuelve a pending.
+ */
+async function updatePost(companyId, postId, {
+  caption,
+  scheduledAt,
+  mediaType,
+  files,
+} = {}) {
+  requireDb();
+  const pool = getPool();
+  const { rows: existingRows } = await pool.query(
+    `SELECT * FROM scheduled_posts
+     WHERE id = $1 AND company_id = $2
+       AND status IN ('pending', 'failed')`,
+    [postId, String(companyId)]
+  );
+  const existing = existingRows[0];
+  if (!existing) {
+    throw Object.assign(
+      new Error("Post no encontrado o ya no se puede editar (solo pending/failed)"),
+      { status: 404 }
+    );
+  }
+
+  const nextCaption =
+    caption !== undefined
+      ? String(caption || "").slice(0, 2200)
+      : existing.caption;
+
+  let nextWhen = existing.scheduled_at;
+  if (scheduledAt !== undefined && scheduledAt !== null && scheduledAt !== "") {
+    const when = new Date(scheduledAt);
+    if (Number.isNaN(when.getTime())) {
+      throw Object.assign(new Error("scheduledAt inválido"), { status: 400 });
+    }
+    if (when.getTime() < Date.now() - 60 * 1000) {
+      throw Object.assign(new Error("La fecha/hora debe ser en el futuro"), {
+        status: 400,
+      });
+    }
+    nextWhen = when.toISOString();
+  }
+
+  let nextType = existing.media_type;
+  let nextFilename = existing.filename;
+  let nextFilenames = resolveFilenames(existing);
+  let nextOriginal = existing.original_name;
+  let nextMime = existing.mime_type;
+  let oldFilenamesToDelete = null;
+
+  const list = Array.isArray(files) ? files.filter(Boolean) : [];
+  if (list.length) {
+    const { type, files: validFiles } = validateFiles({
+      mediaType: mediaType || (list[0].mimetype?.startsWith("video/") ? "REELS" : "IMAGE"),
+      files: list,
+      scheduledAt: nextWhen,
+    });
+    oldFilenamesToDelete = nextFilenames;
+    nextType = type;
+    nextFilenames = validFiles.map((f) => f.filename);
+    nextFilename = nextFilenames[0];
+    nextOriginal = validFiles
+      .map((f) => f.originalname)
+      .filter(Boolean)
+      .join(" | ");
+    nextMime = validFiles[0].mimetype || null;
+  } else if (mediaType) {
+    const requested = String(mediaType).toUpperCase();
+    if (requested === "REELS" && nextType !== "REELS") {
+      throw Object.assign(
+        new Error("Para pasar a Reel subí un video nuevo"),
+        { status: 400 }
+      );
+    }
+    if (
+      (requested === "IMAGE" || requested === "CAROUSEL") &&
+      nextType === "REELS"
+    ) {
+      throw Object.assign(
+        new Error("Para pasar a imagen/carrusel subí fotos nuevas"),
+        { status: 400 }
+      );
+    }
+  }
+
+  const { rows } = await pool.query(
+    `UPDATE scheduled_posts
+     SET caption = $3,
+         scheduled_at = $4,
+         media_type = $5,
+         filename = $6,
+         filenames = $7::jsonb,
+         original_name = $8,
+         mime_type = $9,
+         status = 'pending',
+         error_message = NULL,
+         updated_at = NOW()
+     WHERE id = $1 AND company_id = $2
+       AND status IN ('pending', 'failed')
+     RETURNING *`,
+    [
+      postId,
+      String(companyId),
+      nextCaption,
+      nextWhen,
+      nextType,
+      nextFilename,
+      JSON.stringify(nextFilenames),
+      nextOriginal,
+      nextMime,
+    ]
+  );
+
+  if (!rows[0]) {
+    throw Object.assign(new Error("No se pudo actualizar el post"), {
+      status: 409,
+    });
+  }
+
+  if (oldFilenamesToDelete?.length) {
+    unlinkFilenames(oldFilenamesToDelete);
+  }
+
   return mapRow(rows[0]);
 }
 
@@ -336,7 +478,9 @@ module.exports = {
   getUploadDir,
   publicMediaUrl,
   listPosts,
+  getPost,
   createPost,
+  updatePost,
   cancelPost,
   claimDuePosts,
   processPost,

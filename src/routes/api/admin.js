@@ -18,6 +18,7 @@ const {
 } = require("../../middleware/uploadScheduledMedia");
 const {
   handleCreateScheduledPost,
+  handleUpdateScheduledPost,
 } = require("../helpers/scheduledPostsHandlers");
 const { isDatabaseEnabled } = require("../../db/pool");
 
@@ -202,6 +203,17 @@ router.post(
     handleCreateScheduledPost(req.params.companyId, req.user.email)(req, res)
 );
 
+router.put(
+  "/companies/:companyId/instagram/scheduled-posts/:id",
+  (req, res, next) => {
+    uploadScheduledMedia.array("media", 10)(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      next();
+    });
+  },
+  (req, res) => handleUpdateScheduledPost(req.params.companyId)(req, res)
+);
+
 router.delete(
   "/companies/:companyId/instagram/scheduled-posts/:id",
   async (req, res) => {
@@ -237,6 +249,17 @@ router.post(
     });
   },
   (req, res) => handleCreateScheduledPost("legacy", req.user.email)(req, res)
+);
+
+router.put(
+  "/instagram/scheduled-posts/legacy/:id",
+  (req, res, next) => {
+    uploadScheduledMedia.array("media", 10)(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      next();
+    });
+  },
+  (req, res) => handleUpdateScheduledPost("legacy")(req, res)
 );
 
 router.delete("/instagram/scheduled-posts/legacy/:id", async (req, res) => {

@@ -3,8 +3,12 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 
 function toLocalInputValue(date = new Date(Date.now() + 60 * 60 * 1000)) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) {
+    return toLocalInputValue(new Date(Date.now() + 60 * 60 * 1000));
+  }
   const pad = (n) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function statusLabel(status) {
@@ -24,6 +28,10 @@ function mediaTypeLabel(type, count = 1) {
   return "Imagen";
 }
 
+function editable(status) {
+  return status === "pending" || status === "failed";
+}
+
 export default function InstagramSchedule({ user, onLogout, mode = "company" }) {
   const { companyId } = useParams();
   const [posts, setPosts] = useState([]);
@@ -37,6 +45,8 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
   const [scheduledAt, setScheduledAt] = useState(toLocalInputValue());
   const [files, setFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [existingMediaUrls, setExistingMediaUrls] = useState([]);
 
   const backTo =
     mode === "superadmin"
@@ -84,6 +94,27 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
     [mediaType]
   );
 
+  function resetForm() {
+    setEditingId(null);
+    setMediaType("IMAGE");
+    setCaption("");
+    setScheduledAt(toLocalInputValue());
+    setFiles([]);
+    setExistingMediaUrls([]);
+  }
+
+  function startEdit(post) {
+    setError("");
+    setSuccess("");
+    setEditingId(post.id);
+    setMediaType(post.mediaType === "REELS" ? "REELS" : "IMAGE");
+    setCaption(post.caption || "");
+    setScheduledAt(toLocalInputValue(post.scheduledAt));
+    setFiles([]);
+    setExistingMediaUrls(post.mediaUrls || (post.mediaUrl ? [post.mediaUrl] : []));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function onPickFiles(list) {
     const picked = Array.from(list || []);
     if (mediaType === "REELS") {
@@ -97,7 +128,8 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
     e.preventDefault();
     setError("");
     setSuccess("");
-    if (!files.length) {
+
+    if (!editingId && !files.length) {
       setError(
         mediaType === "REELS"
           ? "Subí un video."
@@ -119,27 +151,39 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
         scheduledAt: iso,
         mediaFiles: files,
       };
-      if (mode === "superadmin") {
-        if (companyId === "legacy") {
-          await api.createLegacyScheduledPost(payload);
+
+      if (editingId) {
+        if (mode === "superadmin") {
+          if (companyId === "legacy") {
+            await api.updateLegacyScheduledPost(editingId, payload);
+          } else {
+            await api.updateAdminScheduledPost(companyId, editingId, payload);
+          }
         } else {
-          await api.createAdminScheduledPost(companyId, payload);
+          await api.updateCompanyScheduledPost(editingId, payload);
         }
+        setSuccess("Post actualizado. Queda pendiente con los nuevos datos.");
       } else {
-        await api.createCompanyScheduledPost(payload);
+        if (mode === "superadmin") {
+          if (companyId === "legacy") {
+            await api.createLegacyScheduledPost(payload);
+          } else {
+            await api.createAdminScheduledPost(companyId, payload);
+          }
+        } else {
+          await api.createCompanyScheduledPost(payload);
+        }
+        const kind =
+          mediaType === "REELS"
+            ? "Reel"
+            : files.length > 1
+              ? `carrusel de ${files.length} fotos`
+              : "imagen";
+        setSuccess(
+          `Post programado (${kind}). Se publicará automáticamente a la hora indicada.`
+        );
       }
-      const kind =
-        mediaType === "REELS"
-          ? "Reel"
-          : files.length > 1
-            ? `carrusel de ${files.length} fotos`
-            : "imagen";
-      setSuccess(
-        `Post programado (${kind}). Se publicará automáticamente a la hora indicada.`
-      );
-      setCaption("");
-      setFiles([]);
-      setScheduledAt(toLocalInputValue());
+      resetForm();
       await load();
     } catch (err) {
       setError(err.message);
@@ -160,6 +204,7 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
       } else {
         await api.cancelCompanyScheduledPost(id);
       }
+      if (editingId === id) resetForm();
       await load();
     } catch (err) {
       setError(err.message);
@@ -195,9 +240,9 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
 
       <div className="dash-panel" style={{ marginBottom: "1rem" }}>
         <p className="muted card-hint">
-          En <strong>Imagen (feed)</strong> podés elegir 1 foto o hasta 10 para
-          carrusel. Reel = 1 video. Necesitás <code>PUBLIC_BASE_URL</code> HTTPS
-          y permiso <code>instagram_content_publish</code>.
+          En <strong>Imagen / Carrusel</strong> podés elegir 1–10 fotos. Los
+          posts <strong>pendientes</strong> o <strong>fallidos</strong> se
+          pueden editar (caption, fecha/hora y media opcional).
         </p>
         {publicBaseUrl && (
           <p className="muted card-hint">
@@ -209,7 +254,17 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
       <div className="dash-grid" style={{ gridTemplateColumns: "1fr 1.1fr" }}>
         <form className="dash-panel" onSubmit={handleSubmit}>
           <div className="dash-panel__head">
-            <h2>Programar nuevo</h2>
+            <h2>{editingId ? "Editar post" : "Programar nuevo"}</h2>
+            {editingId && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={resetForm}
+                disabled={saving}
+              >
+                Cancelar edición
+              </button>
+            )}
           </div>
 
           <label htmlFor="mediaType">Tipo</label>
@@ -228,8 +283,12 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
 
           <label htmlFor="media">
             {mediaType === "REELS"
-              ? "Video (MP4/MOV, máx 50MB)"
-              : "Fotos (1–10 · JPG/PNG · máx 8MB c/u)"}
+              ? editingId
+                ? "Video nuevo (opcional)"
+                : "Video (MP4/MOV, máx 50MB)"
+              : editingId
+                ? "Fotos nuevas (opcional, 1–10)"
+                : "Fotos (1–10 · JPG/PNG · máx 8MB c/u)"}
           </label>
           <input
             id="media"
@@ -239,6 +298,11 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
             disabled={saving}
             onChange={(e) => onPickFiles(e.target.files)}
           />
+          {editingId && !files.length && (
+            <p className="muted card-hint">
+              Si no subís archivos nuevos, se mantienen los actuales.
+            </p>
+          )}
           {mediaType === "IMAGE" && files.length > 0 && (
             <p className="muted card-hint">
               {files.length === 1
@@ -254,8 +318,25 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
               ))}
             </div>
           )}
+          {mediaType === "IMAGE" &&
+            !previews.length &&
+            existingMediaUrls.length > 0 && (
+              <div className="schedule-preview-grid">
+                {existingMediaUrls.map((src) => (
+                  <img key={src} src={src} alt="" />
+                ))}
+              </div>
+            )}
           {mediaType === "REELS" && previews[0] && (
             <video src={previews[0]} className="schedule-preview" controls muted />
+          )}
+          {mediaType === "REELS" && !previews[0] && existingMediaUrls[0] && (
+            <video
+              src={existingMediaUrls[0]}
+              className="schedule-preview"
+              controls
+              muted
+            />
           )}
 
           <label htmlFor="caption">Descripción / caption</label>
@@ -277,7 +358,11 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
           />
 
           <button type="submit" className="btn" disabled={saving}>
-            {saving ? "Guardando…" : "Programar publicación"}
+            {saving
+              ? "Guardando…"
+              : editingId
+                ? "Guardar cambios"
+                : "Programar publicación"}
           </button>
         </form>
 
@@ -293,7 +378,12 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
           ) : (
             <div className="schedule-list">
               {posts.map((p) => (
-                <div key={p.id} className={`schedule-item status-${p.status}`}>
+                <div
+                  key={p.id}
+                  className={`schedule-item status-${p.status}${
+                    editingId === p.id ? " is-editing" : ""
+                  }`}
+                >
                   <div className="schedule-item__top">
                     <strong>
                       {mediaTypeLabel(p.mediaType, p.mediaCount || 1)}
@@ -320,15 +410,27 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
                       {p.errorMessage}
                     </p>
                   )}
-                  {p.status === "pending" && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      style={{ marginTop: "0.5rem" }}
-                      onClick={() => handleCancel(p.id)}
-                    >
-                      Cancelar
-                    </button>
+                  {editable(p.status) && (
+                    <div className="header-actions" style={{ marginTop: "0.5rem" }}>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => startEdit(p)}
+                        disabled={saving}
+                      >
+                        Editar
+                      </button>
+                      {p.status === "pending" && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => handleCancel(p.id)}
+                          disabled={saving}
+                        >
+                          Cancelar
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               ))}
