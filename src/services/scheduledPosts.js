@@ -10,6 +10,8 @@ const {
   VIDEO_MIMES,
 } = require("../middleware/uploadScheduledMedia");
 
+const MAX_CAROUSEL = 10;
+
 function requireDb() {
   if (!isDatabaseEnabled()) {
     throw Object.assign(new Error("Base de datos no configurada"), {
@@ -23,17 +25,36 @@ function publicMediaUrl(filename) {
   return `${base}/files/scheduled/${encodeURIComponent(filename)}`;
 }
 
+function resolveFilenames(row) {
+  if (Array.isArray(row.filenames) && row.filenames.length) {
+    return row.filenames.map(String);
+  }
+  if (typeof row.filenames === "string") {
+    try {
+      const parsed = JSON.parse(row.filenames);
+      if (Array.isArray(parsed) && parsed.length) return parsed.map(String);
+    } catch {
+      /* ignore */
+    }
+  }
+  return row.filename ? [row.filename] : [];
+}
+
 function mapRow(row) {
   if (!row) return null;
+  const filenames = resolveFilenames(row);
   return {
     id: row.id,
     companyId: row.company_id,
     mediaType: row.media_type,
     caption: row.caption,
-    filename: row.filename,
+    filename: filenames[0] || row.filename,
+    filenames,
+    mediaCount: filenames.length,
     originalName: row.original_name,
     mimeType: row.mime_type,
-    mediaUrl: publicMediaUrl(row.filename),
+    mediaUrl: filenames[0] ? publicMediaUrl(filenames[0]) : null,
+    mediaUrls: filenames.map(publicMediaUrl),
     scheduledAt: row.scheduled_at,
     status: row.status,
     metaContainerId: row.meta_container_id,
@@ -47,9 +68,9 @@ function mapRow(row) {
   };
 }
 
-function validateCreateInput({ mediaType, mimeType, fileSize, scheduledAt }) {
-  const type = String(mediaType || "IMAGE").toUpperCase();
-  if (type !== "IMAGE" && type !== "REELS") {
+function validateFiles({ mediaType, files, scheduledAt }) {
+  const requested = String(mediaType || "IMAGE").toUpperCase();
+  if (!["IMAGE", "REELS", "CAROUSEL"].includes(requested)) {
     throw Object.assign(new Error("mediaType debe ser IMAGE o REELS"), {
       status: 400,
     });
@@ -60,39 +81,80 @@ function validateCreateInput({ mediaType, mimeType, fileSize, scheduledAt }) {
     throw Object.assign(new Error("scheduledAt inválido"), { status: 400 });
   }
   if (when.getTime() < Date.now() - 60 * 1000) {
-    throw Object.assign(
-      new Error("La fecha/hora debe ser en el futuro"),
-      { status: 400 }
-    );
+    throw Object.assign(new Error("La fecha/hora debe ser en el futuro"), {
+      status: 400,
+    });
   }
 
-  if (type === "IMAGE") {
-    if (
-      !IMAGE_MIMES.has(mimeType) &&
-      !String(mimeType || "").startsWith("image/")
-    ) {
-      throw Object.assign(
-        new Error("Para IMAGE subí JPG/PNG/WEBP"),
-        { status: 400 }
-      );
-    }
-    if (fileSize > 8 * 1024 * 1024) {
-      throw Object.assign(new Error("La imagen no puede superar 8MB"), {
+  if (!files?.length) {
+    throw Object.assign(new Error("Archivo media requerido"), { status: 400 });
+  }
+
+  if (requested === "REELS") {
+    if (files.length !== 1) {
+      throw Object.assign(new Error("REELS acepta un solo video"), {
         status: 400,
       });
     }
-  } else {
+    const file = files[0];
     if (
-      !VIDEO_MIMES.has(mimeType) &&
-      !String(mimeType || "").startsWith("video/")
+      !VIDEO_MIMES.has(file.mimetype) &&
+      !String(file.mimetype || "").startsWith("video/")
     ) {
       throw Object.assign(new Error("Para REELS subí un video MP4/MOV"), {
         status: 400,
       });
     }
+    return { type: "REELS", when, files };
   }
 
-  return { type, when };
+  if (files.length > MAX_CAROUSEL) {
+    throw Object.assign(
+      new Error(`Máximo ${MAX_CAROUSEL} fotos por carrusel`),
+      { status: 400 }
+    );
+  }
+
+  for (const file of files) {
+    if (
+      !IMAGE_MIMES.has(file.mimetype) &&
+      !String(file.mimetype || "").startsWith("image/")
+    ) {
+      throw Object.assign(
+        new Error("Para feed/carrusel subí solo JPG/PNG/WEBP"),
+        { status: 400 }
+      );
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      throw Object.assign(new Error("Cada imagen no puede superar 8MB"), {
+        status: 400,
+      });
+    }
+  }
+
+  const type = files.length > 1 ? "CAROUSEL" : "IMAGE";
+  return { type, when, files };
+}
+
+function unlinkFiles(files) {
+  for (const file of files || []) {
+    try {
+      if (file?.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function unlinkFilenames(filenames) {
+  for (const name of filenames || []) {
+    try {
+      const filePath = path.join(getUploadDir(), name);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 async function listPosts(companyId, { limit = 50 } = {}) {
@@ -114,34 +176,44 @@ async function createPost({
   caption,
   scheduledAt,
   file,
+  files,
   createdBy,
 }) {
   requireDb();
-  if (!file?.filename) {
-    throw Object.assign(new Error("Archivo media requerido"), { status: 400 });
-  }
+  const list = Array.isArray(files) && files.length
+    ? files
+    : file
+      ? [file]
+      : [];
 
-  const { type, when } = validateCreateInput({
+  const { type, when, files: validFiles } = validateFiles({
     mediaType,
-    mimeType: file.mimetype,
-    fileSize: file.size,
+    files: list,
     scheduledAt,
   });
+
+  const filenames = validFiles.map((f) => f.filename);
+  const first = validFiles[0];
+  const originalNames = validFiles
+    .map((f) => f.originalname)
+    .filter(Boolean)
+    .join(" | ");
 
   const pool = getPool();
   const { rows } = await pool.query(
     `INSERT INTO scheduled_posts
-       (company_id, media_type, caption, filename, original_name, mime_type,
+       (company_id, media_type, caption, filename, filenames, original_name, mime_type,
         scheduled_at, status, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, 'pending', $9)
      RETURNING *`,
     [
       String(companyId),
       type,
       String(caption || "").slice(0, 2200),
-      file.filename,
-      file.originalname || null,
-      file.mimetype || null,
+      filenames[0],
+      JSON.stringify(filenames),
+      originalNames || null,
+      first.mimetype || null,
       when.toISOString(),
       createdBy || null,
     ]
@@ -166,13 +238,7 @@ async function cancelPost(companyId, postId) {
     );
   }
 
-  try {
-    const filePath = path.join(getUploadDir(), rows[0].filename);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  } catch {
-    // ignore cleanup errors
-  }
-
+  unlinkFilenames(resolveFilenames(rows[0]));
   return mapRow(rows[0]);
 }
 
@@ -245,11 +311,17 @@ async function markFailed(postId, errorMessage) {
 }
 
 async function processPost(post) {
-  const mediaUrl = publicMediaUrl(post.filename);
+  const filenames =
+    Array.isArray(post.filenames) && post.filenames.length
+      ? post.filenames
+      : post.filename
+        ? [post.filename]
+        : [];
+  const mediaUrls = filenames.map(publicMediaUrl);
   const result = await publishScheduledMedia({
     companyId: post.companyId,
     mediaType: post.mediaType,
-    mediaUrl,
+    mediaUrls,
     caption: post.caption,
   });
   return markPublished(post.id, {
@@ -270,4 +342,6 @@ module.exports = {
   processPost,
   markFailed,
   markPublished,
+  unlinkFiles,
+  MAX_CAROUSEL,
 };

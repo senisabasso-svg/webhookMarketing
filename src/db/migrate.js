@@ -68,9 +68,10 @@ ON CONFLICT (id) DO NOTHING;
 CREATE TABLE IF NOT EXISTS scheduled_posts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id VARCHAR(64) NOT NULL,
-  media_type VARCHAR(16) NOT NULL CHECK (media_type IN ('IMAGE', 'REELS')),
+  media_type VARCHAR(16) NOT NULL CHECK (media_type IN ('IMAGE', 'REELS', 'CAROUSEL')),
   caption TEXT NOT NULL DEFAULT '',
   filename VARCHAR(512) NOT NULL,
+  filenames JSONB,
   original_name VARCHAR(255),
   mime_type VARCHAR(128),
   scheduled_at TIMESTAMPTZ NOT NULL,
@@ -88,6 +89,26 @@ CREATE TABLE IF NOT EXISTS scheduled_posts (
 
 CREATE INDEX IF NOT EXISTS idx_scheduled_posts_due
   ON scheduled_posts(status, scheduled_at);
+`;
+
+const SCHEMA_PATCHES = `
+ALTER TABLE scheduled_posts
+  ADD COLUMN IF NOT EXISTS filenames JSONB;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_name = 'scheduled_posts'
+      AND constraint_name = 'scheduled_posts_media_type_check'
+  ) THEN
+    ALTER TABLE scheduled_posts DROP CONSTRAINT scheduled_posts_media_type_check;
+  END IF;
+END $$;
+
+ALTER TABLE scheduled_posts
+  ADD CONSTRAINT scheduled_posts_media_type_check
+  CHECK (media_type IN ('IMAGE', 'REELS', 'CAROUSEL'));
 `;
 
 async function seedSuperAdmin(client) {
@@ -121,6 +142,7 @@ async function migrate() {
 
   try {
     await client.query(SCHEMA);
+    await client.query(SCHEMA_PATCHES);
     await seedSuperAdmin(client);
     console.log("[db] Migraciones aplicadas");
   } finally {

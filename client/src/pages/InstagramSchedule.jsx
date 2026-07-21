@@ -18,6 +18,12 @@ function statusLabel(status) {
   return map[status] || status;
 }
 
+function mediaTypeLabel(type, count = 1) {
+  if (type === "REELS") return "Reel";
+  if (type === "CAROUSEL" || count > 1) return `Carrusel (${count})`;
+  return "Imagen";
+}
+
 export default function InstagramSchedule({ user, onLogout, mode = "company" }) {
   const { companyId } = useParams();
   const [posts, setPosts] = useState([]);
@@ -29,8 +35,8 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
   const [mediaType, setMediaType] = useState("IMAGE");
   const [caption, setCaption] = useState("");
   const [scheduledAt, setScheduledAt] = useState(toLocalInputValue());
-  const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState("");
+  const [files, setFiles] = useState([]);
+  const [previews, setPreviews] = useState([]);
 
   const backTo =
     mode === "superadmin"
@@ -63,14 +69,12 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
   }, [mode, companyId]);
 
   useEffect(() => {
-    if (!file) {
-      setPreview("");
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+    const urls = files.map((f) => URL.createObjectURL(f));
+    setPreviews(urls);
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [files]);
 
   const accept = useMemo(
     () =>
@@ -80,12 +84,25 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
     [mediaType]
   );
 
+  function onPickFiles(list) {
+    const picked = Array.from(list || []);
+    if (mediaType === "REELS") {
+      setFiles(picked.slice(0, 1));
+      return;
+    }
+    setFiles(picked.slice(0, 10));
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
     setSuccess("");
-    if (!file) {
-      setError("Subí una imagen o un video.");
+    if (!files.length) {
+      setError(
+        mediaType === "REELS"
+          ? "Subí un video."
+          : "Subí al menos una imagen (hasta 10 para carrusel)."
+      );
       return;
     }
     if (!scheduledAt) {
@@ -100,7 +117,7 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
         mediaType,
         caption,
         scheduledAt: iso,
-        mediaFile: file,
+        mediaFiles: files,
       };
       if (mode === "superadmin") {
         if (companyId === "legacy") {
@@ -111,9 +128,17 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
       } else {
         await api.createCompanyScheduledPost(payload);
       }
-      setSuccess("Post programado. Se publicará automáticamente a la hora indicada.");
+      const kind =
+        mediaType === "REELS"
+          ? "Reel"
+          : files.length > 1
+            ? `carrusel de ${files.length} fotos`
+            : "imagen";
+      setSuccess(
+        `Post programado (${kind}). Se publicará automáticamente a la hora indicada.`
+      );
       setCaption("");
-      setFile(null);
+      setFiles([]);
       setScheduledAt(toLocalInputValue());
       await load();
     } catch (err) {
@@ -170,10 +195,9 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
 
       <div className="dash-panel" style={{ marginBottom: "1rem" }}>
         <p className="muted card-hint">
-          Subí imagen (feed) o video (Reel), poné caption y fecha/hora. El
-          servidor publica solo vía Meta Content Publishing. Necesitás{" "}
-          <code>PUBLIC_BASE_URL</code> HTTPS (Railway) y permiso{" "}
-          <code>instagram_content_publish</code>.
+          En <strong>Imagen (feed)</strong> podés elegir 1 foto o hasta 10 para
+          carrusel. Reel = 1 video. Necesitás <code>PUBLIC_BASE_URL</code> HTTPS
+          y permiso <code>instagram_content_publish</code>.
         </p>
         {publicBaseUrl && (
           <p className="muted card-hint">
@@ -194,30 +218,44 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
             value={mediaType}
             onChange={(e) => {
               setMediaType(e.target.value);
-              setFile(null);
+              setFiles([]);
             }}
             disabled={saving}
           >
-            <option value="IMAGE">Imagen (feed)</option>
+            <option value="IMAGE">Imagen / Carrusel (feed)</option>
             <option value="REELS">Video / Reel</option>
           </select>
 
           <label htmlFor="media">
-            {mediaType === "REELS" ? "Video (MP4/MOV, máx 50MB)" : "Imagen (JPG/PNG, máx 8MB)"}
+            {mediaType === "REELS"
+              ? "Video (MP4/MOV, máx 50MB)"
+              : "Fotos (1–10 · JPG/PNG · máx 8MB c/u)"}
           </label>
           <input
             id="media"
             type="file"
             accept={accept}
+            multiple={mediaType === "IMAGE"}
             disabled={saving}
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            onChange={(e) => onPickFiles(e.target.files)}
           />
-
-          {preview && mediaType === "IMAGE" && (
-            <img src={preview} alt="" className="schedule-preview" />
+          {mediaType === "IMAGE" && files.length > 0 && (
+            <p className="muted card-hint">
+              {files.length === 1
+                ? "1 foto → post simple"
+                : `${files.length} fotos → carrusel`}
+            </p>
           )}
-          {preview && mediaType === "REELS" && (
-            <video src={preview} className="schedule-preview" controls muted />
+
+          {mediaType === "IMAGE" && previews.length > 0 && (
+            <div className="schedule-preview-grid">
+              {previews.map((src, i) => (
+                <img key={src} src={src} alt="" title={files[i]?.name} />
+              ))}
+            </div>
+          )}
+          {mediaType === "REELS" && previews[0] && (
+            <video src={previews[0]} className="schedule-preview" controls muted />
           )}
 
           <label htmlFor="caption">Descripción / caption</label>
@@ -257,7 +295,9 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
               {posts.map((p) => (
                 <div key={p.id} className={`schedule-item status-${p.status}`}>
                   <div className="schedule-item__top">
-                    <strong>{p.mediaType === "REELS" ? "Reel" : "Imagen"}</strong>
+                    <strong>
+                      {mediaTypeLabel(p.mediaType, p.mediaCount || 1)}
+                    </strong>
                     <span className={`badge badge-${p.status}`}>
                       {statusLabel(p.status)}
                     </span>

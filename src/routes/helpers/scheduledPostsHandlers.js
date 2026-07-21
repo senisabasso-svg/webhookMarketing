@@ -1,12 +1,17 @@
-const fs = require("fs");
 const scheduledPosts = require("../../services/scheduledPosts");
 const config = require("../../config");
 
 function handleCreateScheduledPost(companyId, createdBy) {
   return async (req, res) => {
+    const files = Array.isArray(req.files)
+      ? req.files
+      : req.file
+        ? [req.file]
+        : [];
+
     try {
-      if (!req.file) {
-        return res.status(400).json({ error: "Subí una imagen o video" });
+      if (!files.length) {
+        return res.status(400).json({ error: "Subí una o más imágenes, o un video" });
       }
 
       const post = await scheduledPosts.createPost({
@@ -14,7 +19,7 @@ function handleCreateScheduledPost(companyId, createdBy) {
         mediaType: req.body?.mediaType || "IMAGE",
         caption: req.body?.caption || "",
         scheduledAt: req.body?.scheduledAt,
-        file: req.file,
+        files,
         createdBy,
       });
 
@@ -23,16 +28,11 @@ function handleCreateScheduledPost(companyId, createdBy) {
         publicBaseUrl: config.publicBaseUrl,
         note:
           "Meta necesita descargar el archivo vía PUBLIC_BASE_URL (HTTPS). " +
-          "El worker publica automáticamente a la hora programada.",
+          "El worker publica automáticamente a la hora programada. " +
+          "2–10 fotos = carrusel.",
       });
     } catch (error) {
-      if (req.file?.path) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch {
-          /* ignore */
-        }
-      }
+      scheduledPosts.unlinkFiles(files);
       const status = error.status && error.status >= 400 ? error.status : 500;
       res.status(status).json({ error: error.message });
     }

@@ -85,21 +85,28 @@ async function waitForContainerReady(tenant, containerId) {
   throw new Error("Timeout esperando que Meta procese el media (10 min)");
 }
 
-async function createMediaContainer(tenant, igUserId, { mediaType, mediaUrl, caption }) {
-  if (mediaType === "REELS") {
-    return graphRequest(tenant, "POST", `/${igUserId}/media`, {
-      body: {
-        media_type: "REELS",
-        video_url: mediaUrl,
-        caption: caption || "",
-        share_to_feed: true,
-      },
-    });
-  }
+async function createImageItem(tenant, igUserId, imageUrl, { isCarouselItem = false } = {}) {
+  const body = { image_url: imageUrl };
+  if (isCarouselItem) body.is_carousel_item = true;
+  return graphRequest(tenant, "POST", `/${igUserId}/media`, { body });
+}
 
+async function createReelContainer(tenant, igUserId, videoUrl, caption) {
   return graphRequest(tenant, "POST", `/${igUserId}/media`, {
     body: {
-      image_url: mediaUrl,
+      media_type: "REELS",
+      video_url: videoUrl,
+      caption: caption || "",
+      share_to_feed: true,
+    },
+  });
+}
+
+async function createCarouselContainer(tenant, igUserId, childIds, caption) {
+  return graphRequest(tenant, "POST", `/${igUserId}/media`, {
+    body: {
+      media_type: "CAROUSEL",
+      children: childIds.join(","),
       caption: caption || "",
     },
   });
@@ -122,37 +129,92 @@ async function fetchPermalink(tenant, mediaId) {
   }
 }
 
+function assertHttpsUrls(urls) {
+  for (const mediaUrl of urls) {
+    if (!mediaUrl || !/^https:\/\//i.test(mediaUrl)) {
+      throw Object.assign(
+        new Error(
+          "La URL del media debe ser HTTPS público (configurá PUBLIC_BASE_URL en Railway)"
+        ),
+        { status: 400 }
+      );
+    }
+  }
+}
+
 /**
- * Publica un post IMAGE o REELS usando Content Publishing API.
- * mediaUrl debe ser HTTPS público alcanzable por Meta.
+ * Publica IMAGE, CAROUSEL o REELS.
+ * mediaUrls: array de URLs HTTPS públicas.
  */
 async function publishScheduledMedia({
   companyId,
   mediaType,
   mediaUrl,
+  mediaUrls,
   caption,
 }) {
   const { tenant, company } = await getTenantForCompany(companyId);
   const igUserId = await resolveIgUserId(tenant);
-  const type = String(mediaType || "IMAGE").toUpperCase() === "REELS"
-    ? "REELS"
-    : "IMAGE";
+  const urls = (Array.isArray(mediaUrls) && mediaUrls.length
+    ? mediaUrls
+    : mediaUrl
+      ? [mediaUrl]
+      : []
+  ).filter(Boolean);
 
-  if (!mediaUrl || !/^https:\/\//i.test(mediaUrl)) {
-    throw Object.assign(
-      new Error(
-        "La URL del media debe ser HTTPS público (configurá PUBLIC_BASE_URL en Railway)"
-      ),
-      { status: 400 }
-    );
+  if (!urls.length) {
+    throw Object.assign(new Error("Falta mediaUrl/mediaUrls"), { status: 400 });
+  }
+  assertHttpsUrls(urls);
+
+  const requested = String(mediaType || "IMAGE").toUpperCase();
+  let type = requested;
+  if (type === "IMAGE" && urls.length > 1) type = "CAROUSEL";
+  if (type === "CAROUSEL" && urls.length < 2) type = "IMAGE";
+  if (type === "REELS" && urls.length !== 1) {
+    throw Object.assign(new Error("REELS acepta un solo video"), { status: 400 });
   }
 
-  const container = await createMediaContainer(tenant, igUserId, {
-    mediaType: type,
-    mediaUrl,
-    caption,
-  });
-  const creationId = container.id || container.creation_id;
+  let creationId;
+
+  if (type === "REELS") {
+    const container = await createReelContainer(
+      tenant,
+      igUserId,
+      urls[0],
+      caption
+    );
+    creationId = container.id || container.creation_id;
+  } else if (type === "CAROUSEL") {
+    const childIds = [];
+    for (const url of urls.slice(0, 10)) {
+      const item = await createImageItem(tenant, igUserId, url, {
+        isCarouselItem: true,
+      });
+      const childId = item.id || item.creation_id;
+      if (!childId) {
+        throw new Error("Meta no devolvió id de item del carrusel");
+      }
+      await waitForContainerReady(tenant, childId);
+      childIds.push(childId);
+    }
+    const carousel = await createCarouselContainer(
+      tenant,
+      igUserId,
+      childIds,
+      caption
+    );
+    creationId = carousel.id || carousel.creation_id;
+  } else {
+    const container = await graphRequest(tenant, "POST", `/${igUserId}/media`, {
+      body: {
+        image_url: urls[0],
+        caption: caption || "",
+      },
+    });
+    creationId = container.id || container.creation_id;
+  }
+
   if (!creationId) {
     throw new Error("Meta no devolvió creation_id del contenedor");
   }
@@ -171,6 +233,7 @@ async function publishScheduledMedia({
     mediaId: mediaId || null,
     permalink,
     igUserId,
+    mediaType: type,
   };
 }
 

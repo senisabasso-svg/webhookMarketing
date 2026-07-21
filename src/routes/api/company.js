@@ -144,7 +144,7 @@ router.get("/instagram/scheduled-posts", async (req, res) => {
 router.post(
   "/instagram/scheduled-posts",
   (req, res, next) => {
-    uploadScheduledMedia.single("media")(req, res, (err) => {
+    uploadScheduledMedia.array("media", 10)(req, res, (err) => {
       if (err) return res.status(400).json({ error: err.message });
       next();
     });
