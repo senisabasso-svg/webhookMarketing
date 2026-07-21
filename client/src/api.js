@@ -107,6 +107,82 @@ export const api = {
     request(
       `/admin/instagram/conversations/legacy/${encodeURIComponent(userId)}`
     ),
+  getCompanyScheduledPosts: () => request("/company/instagram/scheduled-posts"),
+  getAdminScheduledPosts: (companyId) =>
+    request(`/admin/companies/${companyId}/instagram/scheduled-posts`),
+  getLegacyScheduledPosts: () =>
+    request("/admin/instagram/scheduled-posts/legacy"),
+  createCompanyScheduledPost: async ({
+    mediaType,
+    caption,
+    scheduledAt,
+    mediaFile,
+  }) => {
+    const form = new FormData();
+    form.append("mediaType", mediaType);
+    form.append("caption", caption || "");
+    form.append("scheduledAt", scheduledAt);
+    form.append("media", mediaFile);
+    const res = await fetch("/api/company/instagram/scheduled-posts", {
+      method: "POST",
+      credentials: "include",
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+    return data;
+  },
+  createAdminScheduledPost: async (
+    companyId,
+    { mediaType, caption, scheduledAt, mediaFile }
+  ) => {
+    const form = new FormData();
+    form.append("mediaType", mediaType);
+    form.append("caption", caption || "");
+    form.append("scheduledAt", scheduledAt);
+    form.append("media", mediaFile);
+    const res = await fetch(
+      `/api/admin/companies/${companyId}/instagram/scheduled-posts`,
+      {
+        method: "POST",
+        credentials: "include",
+        body: form,
+      }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+    return data;
+  },
+  createLegacyScheduledPost: async ({
+    mediaType,
+    caption,
+    scheduledAt,
+    mediaFile,
+  }) => {
+    const form = new FormData();
+    form.append("mediaType", mediaType);
+    form.append("caption", caption || "");
+    form.append("scheduledAt", scheduledAt);
+    form.append("media", mediaFile);
+    const res = await fetch("/api/admin/instagram/scheduled-posts/legacy", {
+      method: "POST",
+      credentials: "include",
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+    return data;
+  },
+  cancelCompanyScheduledPost: (id) =>
+    request(`/company/instagram/scheduled-posts/${id}`, { method: "DELETE" }),
+  cancelAdminScheduledPost: (companyId, id) =>
+    request(`/admin/companies/${companyId}/instagram/scheduled-posts/${id}`, {
+      method: "DELETE",
+    }),
+  cancelLegacyScheduledPost: (id) =>
+    request(`/admin/instagram/scheduled-posts/legacy/${id}`, {
+      method: "DELETE",
+    }),
   getIntegration: (type) => request(`/company/integrations/${type}`),
   updateIntegration: (type, config) =>
     request(`/company/integrations/${type}`, {

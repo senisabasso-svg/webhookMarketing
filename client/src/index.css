@@ -878,3 +878,65 @@ input[type="file"] {
     grid-template-columns: 1fr;
   }
 }
+
+.schedule-preview {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 10px;
+  margin-bottom: 1rem;
+  border: 1px solid var(--border);
+  background: #0b1220;
+}
+
+.schedule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 640px;
+  overflow: auto;
+}
+
+.schedule-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.85rem;
+  background: var(--surface2);
+}
+
+.schedule-item__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.schedule-item__caption {
+  margin: 0.45rem 0;
+  font-size: 0.9rem;
+}
+
+.badge-pending {
+  background: #1e3a5f;
+  color: #93c5fd;
+}
+
+.badge-processing {
+  background: #3b2f1a;
+  color: #fbbf24;
+}
+
+.badge-published {
+  background: #14532d;
+  color: #86efac;
+}
+
+.badge-failed {
+  background: #450a0a;
+  color: #fca5a5;
+}
+
+.badge-cancelled {
+  background: #1f2937;
+  color: #9ca3af;
+}

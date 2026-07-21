@@ -10,6 +10,10 @@ const integrationStore = require("./services/integrationStore");
 
 const leaderCommentConfig = require("./services/leaderCommentConfig");
 const nvidiaCosmos = require("./services/nvidiaCosmos");
+const scheduledPosts = require("./services/scheduledPosts");
+const {
+  startScheduledPostsWorker,
+} = require("./services/scheduledPostsWorker");
 
 const authApi = require("./routes/api/auth");
 const adminApi = require("./routes/api/admin");
@@ -33,6 +37,7 @@ app.use("/api/company", companyApi);
 
 leaderCommentConfig.ensureUploadDir();
 nvidiaCosmos.ensureUploadDir();
+scheduledPosts.ensureUploadDir();
 app.use(
   "/files/leader",
   express.static(leaderCommentConfig.getUploadDir(), {
@@ -47,6 +52,17 @@ app.use(
   express.static(nvidiaCosmos.getUploadDir(), {
     setHeaders(res) {
       res.setHeader("Content-Type", "video/mp4");
+      res.setHeader("Cache-Control", "public, max-age=300");
+    },
+  })
+);
+app.use(
+  "/files/scheduled",
+  express.static(scheduledPosts.getUploadDir(), {
+    setHeaders(res, filePath) {
+      if (/\.(mp4|mov|webm)$/i.test(filePath)) {
+        res.setHeader("Content-Type", "video/mp4");
+      }
       res.setHeader("Cache-Control", "public, max-age=300");
     },
   })
@@ -104,6 +120,7 @@ async function start() {
     console.log(`Servidor escuchando en http://localhost:${config.port}`);
     console.log(`Webhook URL: http://localhost:${config.port}/webhook`);
     console.log(`Panel admin: http://localhost:${config.port}`);
+    startScheduledPostsWorker();
   });
 }
 

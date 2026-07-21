@@ -64,6 +64,30 @@ CREATE TABLE IF NOT EXISTS leader_comment_config (
 INSERT INTO leader_comment_config (id)
 VALUES (1)
 ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS scheduled_posts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id VARCHAR(64) NOT NULL,
+  media_type VARCHAR(16) NOT NULL CHECK (media_type IN ('IMAGE', 'REELS')),
+  caption TEXT NOT NULL DEFAULT '',
+  filename VARCHAR(512) NOT NULL,
+  original_name VARCHAR(255),
+  mime_type VARCHAR(128),
+  scheduled_at TIMESTAMPTZ NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'processing', 'published', 'failed', 'cancelled')),
+  meta_container_id VARCHAR(255),
+  meta_media_id VARCHAR(255),
+  permalink TEXT,
+  error_message TEXT,
+  created_by VARCHAR(255),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  published_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_scheduled_posts_due
+  ON scheduled_posts(status, scheduled_at);
 `;
 
 async function seedSuperAdmin(client) {

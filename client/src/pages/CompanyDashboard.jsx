@@ -54,6 +54,9 @@ export default function CompanyDashboard({ user, onLogout }) {
                 <Link className="btn" to="/admin/chat-growth">
                   Chat plan de crecimiento
                 </Link>
+                <Link className="btn" to="/admin/instagram-schedule">
+                  Posts programados
+                </Link>
               </>
             )}
             {integrations.map((i) => (

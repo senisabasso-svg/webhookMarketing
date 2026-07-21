@@ -6,6 +6,13 @@ const defaultSystemPrompt = require("../../prompts/benjamin");
 const instagramInsights = require("../../services/instagramInsights");
 const companyGrowthContext = require("../../services/companyGrowthContext");
 const conversationHistory = require("../../services/conversationHistory");
+const scheduledPosts = require("../../services/scheduledPosts");
+const {
+  uploadScheduledMedia,
+} = require("../../middleware/uploadScheduledMedia");
+const {
+  handleCreateScheduledPost,
+} = require("../helpers/scheduledPostsHandlers");
 const nvidiaChat = require("../../services/nvidiaChat");
 const config = require("../../config");
 const { resolveProvider } = require("../../services/ai");
@@ -121,6 +128,41 @@ router.get("/instagram/conversations/:userId", async (req, res) => {
     res.json({ userId: req.params.userId, messages });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/instagram/scheduled-posts", async (req, res) => {
+  try {
+    const posts = await scheduledPosts.listPosts(req.user.company_id);
+    res.json({ posts, publicBaseUrl: config.publicBaseUrl });
+  } catch (error) {
+    const status = error.status && error.status >= 400 ? error.status : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+router.post(
+  "/instagram/scheduled-posts",
+  (req, res, next) => {
+    uploadScheduledMedia.single("media")(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      next();
+    });
+  },
+  (req, res) =>
+    handleCreateScheduledPost(req.user.company_id, req.user.email)(req, res)
+);
+
+router.delete("/instagram/scheduled-posts/:id", async (req, res) => {
+  try {
+    const post = await scheduledPosts.cancelPost(
+      req.user.company_id,
+      req.params.id
+    );
+    res.json({ post });
+  } catch (error) {
+    const status = error.status && error.status >= 400 ? error.status : 500;
+    res.status(status).json({ error: error.message });
   }
 });
 

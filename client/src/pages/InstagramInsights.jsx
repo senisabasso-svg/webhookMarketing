@@ -183,7 +183,17 @@ export default function InstagramInsights({ user, onLogout, mode = "company" }) 
           </p>
         </div>
         <div className="dash-top__actions">
-          <button type="button" className="btn" onClick={openInbox}>
+          <Link
+            className="btn"
+            to={
+              mode === "superadmin"
+                ? `/superadmin/instagram-schedule/${companyId || "legacy"}`
+                : "/admin/instagram-schedule"
+            }
+          >
+            Posts programados
+          </Link>
+          <button type="button" className="btn btn-secondary" onClick={openInbox}>
             Conversaciones chatbot
           </button>
           <button

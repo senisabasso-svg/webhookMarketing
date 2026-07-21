@@ -6,6 +6,7 @@ import SuperAdmin from "./pages/SuperAdmin";
 import VideoGeneration from "./pages/VideoGeneration";
 import KimiChat from "./pages/KimiChat";
 import InstagramInsights from "./pages/InstagramInsights";
+import InstagramSchedule from "./pages/InstagramSchedule";
 import CompanyDashboard from "./pages/CompanyDashboard";
 import IntegrationEdit from "./pages/IntegrationEdit";
 
@@ -116,6 +117,20 @@ function App() {
         }
       />
       <Route
+        path="/superadmin/instagram-schedule/:companyId"
+        element={
+          user?.role === "superadmin" ? (
+            <InstagramSchedule
+              user={user}
+              onLogout={handleLogout}
+              mode="superadmin"
+            />
+          ) : (
+            <Navigate to="/login" />
+          )
+        }
+      />
+      <Route
         path="/admin"
         element={
           user?.role === "company_admin" ? (
@@ -130,6 +145,20 @@ function App() {
         element={
           user?.role === "company_admin" ? (
             <InstagramInsights
+              user={user}
+              onLogout={handleLogout}
+              mode="company"
+            />
+          ) : (
+            <Navigate to="/login" />
+          )
+        }
+      />
+      <Route
+        path="/admin/instagram-schedule"
+        element={
+          user?.role === "company_admin" ? (
+            <InstagramSchedule
               user={user}
               onLogout={handleLogout}
               mode="company"

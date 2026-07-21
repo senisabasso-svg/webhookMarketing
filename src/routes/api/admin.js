@@ -12,6 +12,13 @@ const { resolveProvider } = require("../../services/ai");
 const instagramInsights = require("../../services/instagramInsights");
 const companyGrowthContext = require("../../services/companyGrowthContext");
 const conversationHistory = require("../../services/conversationHistory");
+const scheduledPosts = require("../../services/scheduledPosts");
+const {
+  uploadScheduledMedia,
+} = require("../../middleware/uploadScheduledMedia");
+const {
+  handleCreateScheduledPost,
+} = require("../helpers/scheduledPostsHandlers");
 const { isDatabaseEnabled } = require("../../db/pool");
 
 const router = express.Router();
@@ -170,6 +177,75 @@ router.get("/instagram/conversations/legacy/:userId", async (req, res) => {
     res.json({ userId: req.params.userId, messages });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/companies/:companyId/instagram/scheduled-posts", async (req, res) => {
+  try {
+    const posts = await scheduledPosts.listPosts(req.params.companyId);
+    res.json({ posts, publicBaseUrl: config.publicBaseUrl });
+  } catch (error) {
+    const status = error.status && error.status >= 400 ? error.status : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+router.post(
+  "/companies/:companyId/instagram/scheduled-posts",
+  (req, res, next) => {
+    uploadScheduledMedia.single("media")(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      next();
+    });
+  },
+  (req, res) =>
+    handleCreateScheduledPost(req.params.companyId, req.user.email)(req, res)
+);
+
+router.delete(
+  "/companies/:companyId/instagram/scheduled-posts/:id",
+  async (req, res) => {
+    try {
+      const post = await scheduledPosts.cancelPost(
+        req.params.companyId,
+        req.params.id
+      );
+      res.json({ post });
+    } catch (error) {
+      const status = error.status && error.status >= 400 ? error.status : 500;
+      res.status(status).json({ error: error.message });
+    }
+  }
+);
+
+router.get("/instagram/scheduled-posts/legacy", async (_req, res) => {
+  try {
+    const posts = await scheduledPosts.listPosts("legacy");
+    res.json({ posts, publicBaseUrl: config.publicBaseUrl });
+  } catch (error) {
+    const status = error.status && error.status >= 400 ? error.status : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+router.post(
+  "/instagram/scheduled-posts/legacy",
+  (req, res, next) => {
+    uploadScheduledMedia.single("media")(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      next();
+    });
+  },
+  (req, res) => handleCreateScheduledPost("legacy", req.user.email)(req, res)
+);
+
+router.delete("/instagram/scheduled-posts/legacy/:id", async (req, res) => {
+  try {
+    const post = await scheduledPosts.cancelPost("legacy", req.params.id);
+    res.json({ post });
+  } catch (error) {
+    const status = error.status && error.status >= 400 ? error.status : 500;
+    res.status(status).json({ error: error.message });
   }
 });
 
