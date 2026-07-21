@@ -46,6 +46,11 @@ export default function CompanyDashboard({ user, onLogout }) {
           <p className="muted">No hay integraciones habilitadas.</p>
         ) : (
           <div className="integration-links">
+            {integrations.some((i) => i.type === "instagram") && (
+              <Link className="btn" to="/admin/instagram-insights">
+                Dashboard Instagram
+              </Link>
+            )}
             {integrations.map((i) => (
               <Link
                 key={i.type}

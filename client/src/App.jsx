@@ -4,6 +4,8 @@ import { api } from "./api";
 import Login from "./pages/Login";
 import SuperAdmin from "./pages/SuperAdmin";
 import VideoGeneration from "./pages/VideoGeneration";
+import KimiChat from "./pages/KimiChat";
+import InstagramInsights from "./pages/InstagramInsights";
 import CompanyDashboard from "./pages/CompanyDashboard";
 import IntegrationEdit from "./pages/IntegrationEdit";
 
@@ -76,10 +78,48 @@ function App() {
         }
       />
       <Route
+        path="/superadmin/chat-kimi"
+        element={
+          user?.role === "superadmin" ? (
+            <KimiChat user={user} onLogout={handleLogout} />
+          ) : (
+            <Navigate to="/login" />
+          )
+        }
+      />
+      <Route
+        path="/superadmin/instagram-insights/:companyId"
+        element={
+          user?.role === "superadmin" ? (
+            <InstagramInsights
+              user={user}
+              onLogout={handleLogout}
+              mode="superadmin"
+            />
+          ) : (
+            <Navigate to="/login" />
+          )
+        }
+      />
+      <Route
         path="/admin"
         element={
           user?.role === "company_admin" ? (
             <CompanyDashboard user={user} onLogout={handleLogout} />
+          ) : (
+            <Navigate to="/login" />
+          )
+        }
+      />
+      <Route
+        path="/admin/instagram-insights"
+        element={
+          user?.role === "company_admin" ? (
+            <InstagramInsights
+              user={user}
+              onLogout={handleLogout}
+              mode="company"
+            />
           ) : (
             <Navigate to="/login" />
           )

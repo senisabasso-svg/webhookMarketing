@@ -57,6 +57,12 @@ export const api = {
     request("/admin/leader-comment/pdf", { method: "DELETE" }),
   getVideoGenerationMeta: () => request("/admin/video-generation"),
   getVideoHistory: () => request("/admin/video-generation/history"),
+  getAiChatMeta: () => request("/admin/ai-chat"),
+  sendAiChat: (payload) =>
+    request("/admin/ai-chat", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   generateVideo: async ({ seed, cfgScale, imageFile }) => {
     const form = new FormData();
     if (cfgScale != null) form.append("cfgScale", String(cfgScale));
@@ -75,6 +81,10 @@ export const api = {
     return data;
   },
   getCompany: () => request("/company/company"),
+  getCompanyInstagramInsights: () => request("/company/instagram/insights"),
+  getAdminCompanyInstagramInsights: (companyId) =>
+    request(`/admin/companies/${companyId}/instagram/insights`),
+  getLegacyInstagramInsights: () => request("/admin/instagram/insights/legacy"),
   getIntegration: (type) => request(`/company/integrations/${type}`),
   updateIntegration: (type, config) =>
     request(`/company/integrations/${type}`, {

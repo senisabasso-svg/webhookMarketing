@@ -3,6 +3,7 @@ const { requireAuth } = require("../../services/auth");
 const integrationStore = require("../../services/integrationStore");
 const { getFieldsForType } = require("../../constants/integrationFields");
 const defaultSystemPrompt = require("../../prompts/benjamin");
+const instagramInsights = require("../../services/instagramInsights");
 
 const router = express.Router();
 
@@ -22,6 +23,19 @@ router.get("/company", async (req, res) => {
     res.json({ company, integrations: rows });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/instagram/insights", async (req, res) => {
+  try {
+    const data = await instagramInsights.getCompanyInsights(req.user.company_id);
+    res.json(data);
+  } catch (error) {
+    const status = error.status && error.status >= 400 ? error.status : 502;
+    res.status(status).json({
+      error: error.message,
+      metaError: error.metaError || null,
+    });
   }
 });
 

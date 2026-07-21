@@ -53,6 +53,8 @@ module.exports = {
   geminiModel: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODELS[0],
   geminiModels: parseGeminiModels(),
   geminiSystemPrompt: process.env.GEMINI_SYSTEM_PROMPT || defaultSystemPrompt,
+  // gemini | kimi | auto (auto = Gemini y si falla, Kimi)
+  aiProvider: (process.env.AI_PROVIDER || "gemini").toLowerCase(),
 
   verifyToken: process.env.VERIFY_TOKEN || "",
   whatsappVerifyToken:
@@ -81,6 +83,11 @@ module.exports = {
     "/v1/genai/stabilityai/stable-video-diffusion",
   // UUID opcional si usás NVCF pexec directo
   nvidiaNvcfFunctionId: process.env.NVIDIA_NVCF_FUNCTION_ID || "",
+  // Chat Kimi vía NVIDIA (integrate)
+  nvidiaChatBaseUrl: (
+    process.env.NVIDIA_CHAT_BASE_URL || "https://integrate.api.nvidia.com"
+  ).replace(/\/$/, ""),
+  nvidiaChatModel: process.env.NVIDIA_CHAT_MODEL || "moonshotai/kimi-k2.6",
 
   graphBaseUrl() {
     return this.metaApiHost === "instagram"

@@ -1,4 +1,4 @@
-const { generateReply } = require("./gemini");
+const { generateReply } = require("./ai");
 const { sendWhatsAppMessage } = require("./whatsapp");
 const { tryAcquire, markProcessed, release } = require("./messageDedup");
 const { getHistory, appendTurn } = require("./conversationHistory");

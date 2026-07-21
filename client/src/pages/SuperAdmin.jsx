@@ -211,6 +211,15 @@ export default function SuperAdmin({ user, onLogout }) {
           <Link className="btn btn-secondary" to="/superadmin/generacion-video">
             GENERACIÓN VIDEO
           </Link>
+          <Link className="btn btn-secondary" to="/superadmin/chat-kimi">
+            CHAT KIMI
+          </Link>
+          <Link
+            className="btn btn-secondary"
+            to="/superadmin/instagram-insights/legacy"
+          >
+            Insights Febros
+          </Link>
           {febrosTracking?.url ? (
             <a
               className="btn btn-secondary"
@@ -400,6 +409,7 @@ export default function SuperAdmin({ user, onLogout }) {
                 <th>Integraciones</th>
                 <th>ID emisor</th>
                 <th>Creada</th>
+                <th>Dashboard</th>
               </tr>
             </thead>
             <tbody>
@@ -421,6 +431,18 @@ export default function SuperAdmin({ user, onLogout }) {
                   </td>
                   <td className="muted">
                     {new Date(c.created_at).toLocaleDateString("es-UY")}
+                  </td>
+                  <td>
+                    {(c.integrations || []).some((i) => i.type === "instagram") ? (
+                      <Link
+                        className="btn btn-secondary"
+                        to={`/superadmin/instagram-insights/${c.id}`}
+                      >
+                        Insights IG
+                      </Link>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
                   </td>
                 </tr>
               ))}

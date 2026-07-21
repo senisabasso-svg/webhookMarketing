@@ -1,4 +1,4 @@
-const { generateReply } = require("./gemini");
+const { generateReply } = require("./ai");
 const { sendInstagramMessage } = require("./meta");
 const { tryAcquire, markProcessed, release } = require("./messageDedup");
 const { getHistory, appendTurn } = require("./conversationHistory");

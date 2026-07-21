@@ -7,11 +7,54 @@ const leaderCommentConfig = require("../../services/leaderCommentConfig");
 const { uploadLeaderPdf } = require("../../middleware/uploadLeaderPdf");
 const { uploadVideoImage } = require("../../middleware/uploadVideoImage");
 const nvidiaCosmos = require("../../services/nvidiaCosmos");
+const nvidiaChat = require("../../services/nvidiaChat");
+const { resolveProvider } = require("../../services/ai");
+const instagramInsights = require("../../services/instagramInsights");
 const { isDatabaseEnabled } = require("../../db/pool");
 
 const router = express.Router();
 
 router.use(requireAuth(["superadmin"]));
+
+router.get("/ai-chat", (_req, res) => {
+  res.json({
+    configured: config.isNvidiaConfigured(),
+    provider: resolveProvider(),
+    model: config.nvidiaChatModel,
+    baseUrl: config.nvidiaChatBaseUrl,
+    aiProviderEnv: config.aiProvider,
+  });
+});
+
+router.post("/ai-chat", async (req, res) => {
+  const message = String(req.body?.message || "").trim();
+  if (!message) {
+    return res.status(400).json({ error: "Mensaje requerido" });
+  }
+
+  if (!config.isNvidiaConfigured()) {
+    return res.status(503).json({
+      error: "NVIDIA_API_KEY no configurada en Railway / .env",
+    });
+  }
+
+  try {
+    const history = Array.isArray(req.body?.history) ? req.body.history : [];
+    const result = await nvidiaChat.generateReply(
+      { message },
+      null,
+      history
+    );
+    res.json(result);
+  } catch (error) {
+    console.error("[ai-chat] error:", error.message);
+    const status =
+      error.status && error.status >= 400 && error.status < 600
+        ? error.status
+        : 502;
+    res.status(status).json({ error: error.message });
+  }
+});
 
 router.get("/companies", async (_req, res) => {
   try {
@@ -19,6 +62,34 @@ router.get("/companies", async (_req, res) => {
     res.json({ companies });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/companies/:companyId/instagram/insights", async (req, res) => {
+  try {
+    const data = await instagramInsights.getCompanyInsights(
+      req.params.companyId
+    );
+    res.json(data);
+  } catch (error) {
+    const status = error.status && error.status >= 400 ? error.status : 502;
+    res.status(status).json({
+      error: error.message,
+      metaError: error.metaError || null,
+    });
+  }
+});
+
+router.get("/instagram/insights/legacy", async (_req, res) => {
+  try {
+    const data = await instagramInsights.getCompanyInsights("legacy");
+    res.json(data);
+  } catch (error) {
+    const status = error.status && error.status >= 400 ? error.status : 502;
+    res.status(status).json({
+      error: error.message,
+      metaError: error.metaError || null,
+    });
   }
 });
 
