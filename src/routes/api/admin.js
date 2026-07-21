@@ -11,6 +11,7 @@ const nvidiaChat = require("../../services/nvidiaChat");
 const { resolveProvider } = require("../../services/ai");
 const instagramInsights = require("../../services/instagramInsights");
 const companyGrowthContext = require("../../services/companyGrowthContext");
+const conversationHistory = require("../../services/conversationHistory");
 const { isDatabaseEnabled } = require("../../db/pool");
 
 const router = express.Router();
@@ -116,6 +117,59 @@ router.get("/instagram/insights/legacy", async (_req, res) => {
       error: error.message,
       metaError: error.metaError || null,
     });
+  }
+});
+
+router.get("/companies/:companyId/instagram/conversations", async (req, res) => {
+  try {
+    const conversations = await conversationHistory.listConversations(
+      req.params.companyId,
+      "instagram"
+    );
+    res.json({ conversations });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get(
+  "/companies/:companyId/instagram/conversations/:userId",
+  async (req, res) => {
+    try {
+      const messages = await conversationHistory.getConversationThread(
+        req.params.companyId,
+        "instagram",
+        req.params.userId
+      );
+      res.json({ userId: req.params.userId, messages });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+router.get("/instagram/conversations/legacy", async (_req, res) => {
+  try {
+    const conversations = await conversationHistory.listConversations(
+      "legacy",
+      "instagram"
+    );
+    res.json({ conversations });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/instagram/conversations/legacy/:userId", async (req, res) => {
+  try {
+    const messages = await conversationHistory.getConversationThread(
+      "legacy",
+      "instagram",
+      req.params.userId
+    );
+    res.json({ userId: req.params.userId, messages });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 

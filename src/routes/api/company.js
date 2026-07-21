@@ -5,6 +5,7 @@ const { getFieldsForType } = require("../../constants/integrationFields");
 const defaultSystemPrompt = require("../../prompts/benjamin");
 const instagramInsights = require("../../services/instagramInsights");
 const companyGrowthContext = require("../../services/companyGrowthContext");
+const conversationHistory = require("../../services/conversationHistory");
 const nvidiaChat = require("../../services/nvidiaChat");
 const config = require("../../config");
 const { resolveProvider } = require("../../services/ai");
@@ -95,6 +96,31 @@ router.get("/instagram/insights", async (req, res) => {
       error: error.message,
       metaError: error.metaError || null,
     });
+  }
+});
+
+router.get("/instagram/conversations", async (req, res) => {
+  try {
+    const conversations = await conversationHistory.listConversations(
+      req.user.company_id,
+      "instagram"
+    );
+    res.json({ conversations });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get("/instagram/conversations/:userId", async (req, res) => {
+  try {
+    const messages = await conversationHistory.getConversationThread(
+      req.user.company_id,
+      "instagram",
+      req.params.userId
+    );
+    res.json({ userId: req.params.userId, messages });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 

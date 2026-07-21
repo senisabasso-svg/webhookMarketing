@@ -91,6 +91,22 @@ export const api = {
   getAdminCompanyInstagramInsights: (companyId) =>
     request(`/admin/companies/${companyId}/instagram/insights`),
   getLegacyInstagramInsights: () => request("/admin/instagram/insights/legacy"),
+  getCompanyInstagramConversations: () =>
+    request("/company/instagram/conversations"),
+  getCompanyInstagramConversation: (userId) =>
+    request(`/company/instagram/conversations/${encodeURIComponent(userId)}`),
+  getAdminCompanyInstagramConversations: (companyId) =>
+    request(`/admin/companies/${companyId}/instagram/conversations`),
+  getAdminCompanyInstagramConversation: (companyId, userId) =>
+    request(
+      `/admin/companies/${companyId}/instagram/conversations/${encodeURIComponent(userId)}`
+    ),
+  getLegacyInstagramConversations: () =>
+    request("/admin/instagram/conversations/legacy"),
+  getLegacyInstagramConversation: (userId) =>
+    request(
+      `/admin/instagram/conversations/legacy/${encodeURIComponent(userId)}`
+    ),
   getIntegration: (type) => request(`/company/integrations/${type}`),
   updateIntegration: (type, config) =>
     request(`/company/integrations/${type}`, {
