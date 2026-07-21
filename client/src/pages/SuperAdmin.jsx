@@ -212,7 +212,7 @@ export default function SuperAdmin({ user, onLogout }) {
             GENERACIÓN VIDEO
           </Link>
           <Link className="btn btn-secondary" to="/superadmin/chat-kimi">
-            CHAT KIMI
+            CHAT NVIDIA
           </Link>
           <Link
             className="btn btn-secondary"

@@ -87,7 +87,9 @@ module.exports = {
   nvidiaChatBaseUrl: (
     process.env.NVIDIA_CHAT_BASE_URL || "https://integrate.api.nvidia.com"
   ).replace(/\/$/, ""),
-  nvidiaChatModel: process.env.NVIDIA_CHAT_MODEL || "moonshotai/kimi-k2.6",
+  nvidiaChatModel:
+    process.env.NVIDIA_CHAT_MODEL ||
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
 
   graphBaseUrl() {
     return this.metaApiHost === "instagram"

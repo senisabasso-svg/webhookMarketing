@@ -24,7 +24,7 @@ async function generateReply(input, tenant = null, history = []) {
       return await gemini.generateReply(input, tenant, history);
     } catch (geminiError) {
       console.warn(
-        "[ai] Gemini falló, probando Kimi:",
+        "[ai] Gemini falló, probando NVIDIA chat:",
         geminiError.message?.slice(0, 120)
       );
       return nvidiaChat.generateReply(input, tenant, history);

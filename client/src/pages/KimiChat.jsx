@@ -49,9 +49,10 @@ export default function KimiChat({ user, onLogout }) {
     <div className="layout">
       <header className="header">
         <div>
-          <h1>CHAT KIMI</h1>
+          <h1>CHAT NVIDIA</h1>
           <p className="muted">
-            {user.email} · {meta?.model || "moonshotai/kimi-k2.6"}
+            {user.email} ·{" "}
+            {meta?.model || "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"}
           </p>
         </div>
         <div className="header-actions">
@@ -73,15 +74,16 @@ export default function KimiChat({ user, onLogout }) {
       )}
 
       <div className="card">
-        <h2>Prueba Kimi K2.6 (NVIDIA)</h2>
+        <h2>Prueba Nemotron Omni (chat multimodal)</h2>
         <p className="muted card-hint">
           Endpoint: {meta?.baseUrl || "https://integrate.api.nvidia.com"}
-          /v1/chat/completions
+          /v1/chat/completions — analiza texto/imagen/video;{" "}
+          <strong>no genera MP4</strong>.
         </p>
         <p className="muted card-hint">
-          Para usarlo en Instagram/WhatsApp poné{" "}
-          <code>AI_PROVIDER=kimi</code> (o <code>auto</code>) en Railway.
-          Actual: <code>{meta?.aiProviderEnv || "gemini"}</code>
+          Para Instagram/WhatsApp: <code>AI_PROVIDER=nvidia</code> (o{" "}
+          <code>auto</code>) en Railway. Actual:{" "}
+          <code>{meta?.aiProviderEnv || "gemini"}</code>
         </p>
 
         <div className="chat-thread">
@@ -93,7 +95,7 @@ export default function KimiChat({ user, onLogout }) {
               key={`${turn.role}-${idx}`}
               className={`chat-bubble chat-bubble--${turn.role}`}
             >
-              <strong>{turn.role === "user" ? "Vos" : "Kimi"}</strong>
+              <strong>{turn.role === "user" ? "Vos" : "Nemotron"}</strong>
               <p>{turn.content}</p>
             </div>
           ))}
