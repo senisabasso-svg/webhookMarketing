@@ -32,6 +32,75 @@ function editable(status) {
   return status === "pending" || status === "failed";
 }
 
+function MediaLightbox({ urls, index, onClose, onIndexChange }) {
+  if (!urls?.length || index == null) return null;
+  const current = urls[index];
+  const total = urls.length;
+
+  function prev(e) {
+    e?.stopPropagation?.();
+    onIndexChange((index - 1 + total) % total);
+  }
+  function next(e) {
+    e?.stopPropagation?.();
+    onIndexChange((index + 1) % total);
+  }
+
+  return (
+    <div
+      className="media-lightbox"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+        if (e.key === "ArrowLeft") prev(e);
+        if (e.key === "ArrowRight") next(e);
+      }}
+    >
+      <div className="media-lightbox__backdrop" />
+      <div
+        className="media-lightbox__panel"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="media-lightbox__top">
+          <span className="muted">
+            {index + 1} / {total}
+          </span>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>
+            Cerrar
+          </button>
+        </div>
+        <img src={current} alt="" className="media-lightbox__img" />
+        {total > 1 && (
+          <div className="media-lightbox__nav">
+            <button type="button" className="btn btn-secondary" onClick={prev}>
+              Anterior
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={next}>
+              Siguiente
+            </button>
+          </div>
+        )}
+        {total > 1 && (
+          <div className="media-lightbox__thumbs">
+            {urls.map((src, i) => (
+              <button
+                key={src}
+                type="button"
+                className={`media-lightbox__thumb ${i === index ? "is-active" : ""}`}
+                onClick={() => onIndexChange(i)}
+              >
+                <img src={src} alt="" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function InstagramSchedule({ user, onLogout, mode = "company" }) {
   const { companyId } = useParams();
   const [posts, setPosts] = useState([]);
@@ -47,6 +116,7 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
   const [previews, setPreviews] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [existingMediaUrls, setExistingMediaUrls] = useState([]);
+  const [lightbox, setLightbox] = useState({ urls: [], index: null });
 
   const backTo =
     mode === "superadmin"
@@ -128,6 +198,16 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
       return;
     }
     setFiles(picked.slice(0, 10));
+  }
+
+  function openLightbox(urls, index = 0) {
+    const list = (urls || []).filter(Boolean);
+    if (!list.length) return;
+    setLightbox({ urls: list, index: Math.max(0, Math.min(index, list.length - 1)) });
+  }
+
+  function closeLightbox() {
+    setLightbox({ urls: [], index: null });
   }
 
   async function handleSubmit(e) {
@@ -321,7 +401,15 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
           {mediaType === "IMAGE" && previews.length > 0 && (
             <div className="schedule-preview-grid">
               {previews.map((src, i) => (
-                <img key={src} src={src} alt="" title={files[i]?.name} />
+                <button
+                  key={src}
+                  type="button"
+                  className="schedule-thumb-btn"
+                  title="Ver en grande"
+                  onClick={() => openLightbox(previews, i)}
+                >
+                  <img src={src} alt="" />
+                </button>
               ))}
             </div>
           )}
@@ -329,10 +417,24 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
             !previews.length &&
             existingMediaUrls.length > 0 && (
               <div className="schedule-preview-grid">
-                {existingMediaUrls.map((src) => (
-                  <img key={src} src={src} alt="" />
+                {existingMediaUrls.map((src, i) => (
+                  <button
+                    key={src}
+                    type="button"
+                    className="schedule-thumb-btn"
+                    title="Ver en grande"
+                    onClick={() => openLightbox(existingMediaUrls, i)}
+                  >
+                    <img src={src} alt="" />
+                  </button>
                 ))}
               </div>
+            )}
+          {mediaType === "IMAGE" &&
+            (previews.length > 0 || existingMediaUrls.length > 0) && (
+              <p className="muted card-hint">
+                Clic en una foto para verla en grande y recorrer el carrusel.
+              </p>
             )}
           {mediaType === "REELS" && previews[0] && (
             <video src={previews[0]} className="schedule-preview" controls muted />
@@ -402,8 +504,18 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
                   {(p.previewUrls?.length > 0 || p.previewUrl) &&
                     p.mediaType !== "REELS" && (
                       <div className="schedule-preview-grid schedule-preview-grid--mini">
-                        {(p.previewUrls || [p.previewUrl]).map((src) => (
-                          <img key={src} src={src} alt="" />
+                        {(p.previewUrls || [p.previewUrl]).map((src, i) => (
+                          <button
+                            key={src}
+                            type="button"
+                            className="schedule-thumb-btn"
+                            title="Ver en grande"
+                            onClick={() =>
+                              openLightbox(p.previewUrls || [p.previewUrl], i)
+                            }
+                          >
+                            <img src={src} alt="" />
+                          </button>
                         ))}
                       </div>
                     )}
@@ -468,6 +580,13 @@ export default function InstagramSchedule({ user, onLogout, mode = "company" }) 
           )}
         </div>
       </div>
+
+      <MediaLightbox
+        urls={lightbox.urls}
+        index={lightbox.index}
+        onClose={closeLightbox}
+        onIndexChange={(i) => setLightbox((prev) => ({ ...prev, index: i }))}
+      />
     </div>
   );
 }
